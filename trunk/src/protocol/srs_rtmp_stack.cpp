@@ -210,7 +210,7 @@ int SrsPacket::encode_packet(SrsStream* stream)
 
 SrsProtocol::AckWindowSize::AckWindowSize()
 {
-    ack_window_size = 0;
+    ack_window_size = 2500000;
     acked_size = 0;
 }
 
