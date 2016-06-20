@@ -1608,7 +1608,7 @@ int SrsProtocol::response_acknowledgement_message()
     
     SrsAcknowledgementPacket* pkt = new SrsAcknowledgementPacket();
     in_ack_size.acked_size = skt->get_recv_bytes();
-    pkt->sequence_number = (int32_t)in_ack_size.acked_size;
+    pkt->sequence_number = (int32_t)(in_ack_size.acked_size & 0xfffffff);
     
     // cache the message and use flush to send.
     if (!auto_response_when_recv) {
