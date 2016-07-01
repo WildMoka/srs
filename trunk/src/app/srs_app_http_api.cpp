@@ -813,7 +813,7 @@ int SrsGoApiClients::serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r)
         std::stringstream data;
         
         if (!client) {
-            ret = stat->dumps_clients(data, 0, 10);
+            ret = stat->dumps_clients(data, 0, 200);
             
             ss << SRS_JOBJECT_START
                     << SRS_JFIELD_ERROR(ret) << SRS_JFIELD_CONT
