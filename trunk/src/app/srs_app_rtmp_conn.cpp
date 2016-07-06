@@ -996,7 +996,7 @@ int SrsRtmpConn::handle_publish_message(SrsSource* source, SrsCommonMessage* msg
         }
 
         // for fmle, drop others except the fmle start packet.
-        if (dynamic_cast<SrsFMLEStartPacket*>(pkt)) {
+        if (dynamic_cast<SrsFMLEStartPacket*>(pkt) && vhost_is_edge) {
             SrsFMLEStartPacket* unpublish = dynamic_cast<SrsFMLEStartPacket*>(pkt);
             if ((ret = rtmp->fmle_unpublish(res->stream_id, unpublish->transaction_id)) != ERROR_SUCCESS) {
                 return ret;
