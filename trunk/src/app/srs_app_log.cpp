@@ -404,7 +404,7 @@ void SrsFastLog::open_log_file()
     
     if(fd == -1 && errno == ENOENT) {
         fd = open(filename.c_str(), 
-            O_RDWR | O_CREAT | O_TRUNC, 
+            O_RDWR | O_CREAT | O_APPEND,
             S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH
         );
     }
