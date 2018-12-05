@@ -169,7 +169,7 @@ string srs_codec_avc_level2str(SrsAvcLevel level)
 // 1 = 11 kHz = 11025 Hz
 // 2 = 22 kHz = 22050 Hz
 // 3 = 44 kHz = 44100 Hz
-int flv_sample_rates[] = {5512, 11025, 22050, 44100};
+int flv_sample_rates[] = {5512, 11025, 22050, 44100, 0};
 
 // the sample rates in the codec,
 // in the sequence header.
@@ -339,7 +339,7 @@ void SrsCodecSample::clear()
     cts = 0;
     frame_type = SrsCodecVideoAVCFrameReserved;
     avc_packet_type = SrsCodecVideoAVCTypeReserved;
-    has_idr = false;
+    has_sps_pps = has_aud = has_idr = false;
     first_nalu_type = SrsAvcNaluTypeReserved;
     
     acodec = SrsCodecAudioReserved1;
@@ -370,6 +370,10 @@ int SrsCodecSample::add_sample_unit(char* bytes, int size)
         
         if (nal_unit_type == SrsAvcNaluTypeIDR) {
             has_idr = true;
+        } else if (nal_unit_type == SrsAvcNaluTypeSPS || nal_unit_type == SrsAvcNaluTypePPS) {
+            has_sps_pps = true;
+        } else if (nal_unit_type == SrsAvcNaluTypeAccessUnitDelimiter) {
+            has_aud = true;
         }
     
         if (first_nalu_type == SrsAvcNaluTypeReserved) {
@@ -692,59 +696,8 @@ int SrsAvcAacCodec::video_avc_demux(char* data, int size, SrsCodecSample* sample
             return ret;
         }
     } else if (avc_packet_type == SrsCodecVideoAVCTypeNALU){
-        // ensure the sequence header demuxed
-        if (!is_avc_codec_ok()) {
-            srs_warn("avc ignore type=%d for no sequence header. ret=%d", avc_packet_type, ret);
+        if ((ret = video_nalu_demux(stream, sample)) != ERROR_SUCCESS) {
             return ret;
-        }
-
-        // guess for the first time.
-        if (payload_format == SrsAvcPayloadFormatGuess) {
-            // One or more NALUs (Full frames are required)
-            // try  "AnnexB" from H.264-AVC-ISO_IEC_14496-10.pdf, page 211.
-            if ((ret = avc_demux_annexb_format(stream, sample)) != ERROR_SUCCESS) {
-                // stop try when system error.
-                if (ret != ERROR_HLS_AVC_TRY_OTHERS) {
-                    srs_error("avc demux for annexb failed. ret=%d", ret);
-                    return ret;
-                }
-                
-                // try "ISO Base Media File Format" from H.264-AVC-ISO_IEC_14496-15.pdf, page 20
-                if ((ret = avc_demux_ibmf_format(stream, sample)) != ERROR_SUCCESS) {
-                    return ret;
-                } else {
-                    payload_format = SrsAvcPayloadFormatIbmf;
-                    srs_info("hls guess avc payload is ibmf format.");
-                }
-            } else {
-                payload_format = SrsAvcPayloadFormatAnnexb;
-                srs_info("hls guess avc payload is annexb format.");
-            }
-        } else if (payload_format == SrsAvcPayloadFormatIbmf) {
-            // try "ISO Base Media File Format" from H.264-AVC-ISO_IEC_14496-15.pdf, page 20
-            if ((ret = avc_demux_ibmf_format(stream, sample)) != ERROR_SUCCESS) {
-                return ret;
-            }
-            srs_info("hls decode avc payload in ibmf format.");
-        } else {
-            // One or more NALUs (Full frames are required)
-            // try  "AnnexB" from H.264-AVC-ISO_IEC_14496-10.pdf, page 211.
-            if ((ret = avc_demux_annexb_format(stream, sample)) != ERROR_SUCCESS) {
-                // ok, we guess out the payload is annexb, but maybe changed to ibmf.
-                if (ret != ERROR_HLS_AVC_TRY_OTHERS) {
-                    srs_error("avc demux for annexb failed. ret=%d", ret);
-                    return ret;
-                }
-                
-                // try "ISO Base Media File Format" from H.264-AVC-ISO_IEC_14496-15.pdf, page 20
-                if ((ret = avc_demux_ibmf_format(stream, sample)) != ERROR_SUCCESS) {
-                    return ret;
-                } else {
-                    payload_format = SrsAvcPayloadFormatIbmf;
-                    srs_warn("hls avc payload change from annexb to ibmf format.");
-                }
-            }
-            srs_info("hls decode avc payload in annexb format.");
         }
     } else {
         // ignored.
@@ -752,6 +705,68 @@ int SrsAvcAacCodec::video_avc_demux(char* data, int size, SrsCodecSample* sample
     
     srs_info("avc decoded, type=%d, codec=%d, avc=%d, cts=%d, size=%d",
         frame_type, video_codec_id, avc_packet_type, composition_time, size);
+    
+    return ret;
+}
+
+int SrsAvcAacCodec::video_nalu_demux(SrsStream* stream, SrsCodecSample* sample)
+{
+    int ret = ERROR_SUCCESS;
+    
+    // ensure the sequence header demuxed
+    if (!is_avc_codec_ok()) {
+        srs_warn("avc ignore type=%d for no sequence header. ret=%d", SrsCodecVideoAVCTypeNALU, ret);
+        return ret;
+    }
+    
+    // guess for the first time.
+    if (payload_format == SrsAvcPayloadFormatGuess) {
+        // One or more NALUs (Full frames are required)
+        // try  "AnnexB" from H.264-AVC-ISO_IEC_14496-10.pdf, page 211.
+        if ((ret = avc_demux_annexb_format(stream, sample)) != ERROR_SUCCESS) {
+            // stop try when system error.
+            if (ret != ERROR_HLS_AVC_TRY_OTHERS) {
+                srs_error("avc demux for annexb failed. ret=%d", ret);
+                return ret;
+            }
+            
+            // try "ISO Base Media File Format" from H.264-AVC-ISO_IEC_14496-15.pdf, page 20
+            if ((ret = avc_demux_ibmf_format(stream, sample)) != ERROR_SUCCESS) {
+                return ret;
+            } else {
+                payload_format = SrsAvcPayloadFormatIbmf;
+                srs_info("hls guess avc payload is ibmf format.");
+            }
+        } else {
+            payload_format = SrsAvcPayloadFormatAnnexb;
+            srs_info("hls guess avc payload is annexb format.");
+        }
+    } else if (payload_format == SrsAvcPayloadFormatIbmf) {
+        // try "ISO Base Media File Format" from H.264-AVC-ISO_IEC_14496-15.pdf, page 20
+        if ((ret = avc_demux_ibmf_format(stream, sample)) != ERROR_SUCCESS) {
+            return ret;
+        }
+        srs_info("hls decode avc payload in ibmf format.");
+    } else {
+        // One or more NALUs (Full frames are required)
+        // try  "AnnexB" from H.264-AVC-ISO_IEC_14496-10.pdf, page 211.
+        if ((ret = avc_demux_annexb_format(stream, sample)) != ERROR_SUCCESS) {
+            // ok, we guess out the payload is annexb, but maybe changed to ibmf.
+            if (ret != ERROR_HLS_AVC_TRY_OTHERS) {
+                srs_error("avc demux for annexb failed. ret=%d", ret);
+                return ret;
+            }
+            
+            // try "ISO Base Media File Format" from H.264-AVC-ISO_IEC_14496-15.pdf, page 20
+            if ((ret = avc_demux_ibmf_format(stream, sample)) != ERROR_SUCCESS) {
+                return ret;
+            } else {
+                payload_format = SrsAvcPayloadFormatIbmf;
+                srs_warn("hls avc payload change from annexb to ibmf format.");
+            }
+        }
+        srs_info("hls decode avc payload in annexb format.");
+    }
     
     return ret;
 }
@@ -1040,11 +1055,6 @@ int SrsAvcAacCodec::avc_demux_sps_rbsp(char* rbsp, int nb_rbsp)
                 if ((ret = srs_avc_nalu_read_bit(&bs, seq_scaling_matrix_present_flag_i)) != ERROR_SUCCESS) {
                     return ret;
                 }
-                if (seq_scaling_matrix_present_flag_i) {
-                    ret = ERROR_HLS_DECODE_ERROR;
-                    srs_error("sps the seq_scaling_matrix_present_flag invalid, i=%d, nb_scmpfs=%d. ret=%d", i, nb_scmpfs, ret);
-                    return ret;
-                }
             }
         }
     }
@@ -1084,10 +1094,16 @@ int SrsAvcAacCodec::avc_demux_sps_rbsp(char* rbsp, int nb_rbsp)
         if ((ret = srs_avc_nalu_read_uev(&bs, num_ref_frames_in_pic_order_cnt_cycle)) != ERROR_SUCCESS) {
             return ret;
         }
-        if (num_ref_frames_in_pic_order_cnt_cycle) {
+        if (num_ref_frames_in_pic_order_cnt_cycle < 0) {
             ret = ERROR_HLS_DECODE_ERROR;
             srs_error("sps the num_ref_frames_in_pic_order_cnt_cycle invalid. ret=%d", ret);
             return ret;
+        }
+        for (int i = 0; i < num_ref_frames_in_pic_order_cnt_cycle; i++) {
+            int32_t offset_for_ref_frame_i = -1;
+            if ((ret = srs_avc_nalu_read_uev(&bs, offset_for_ref_frame_i)) != ERROR_SUCCESS) {
+                return ret;
+            }
         }
     }
     

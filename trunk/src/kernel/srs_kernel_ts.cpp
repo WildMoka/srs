@@ -184,8 +184,11 @@ SrsTsMessage* SrsTsMessage::detach()
     cp->sid = sid;
     cp->PES_packet_length = PES_packet_length;
     cp->continuity_counter = continuity_counter;
+    
+    srs_freep(cp->payload);
     cp->payload = payload;
     payload = NULL;
+    
     return cp;
 }
 
@@ -199,6 +202,7 @@ ISrsTsHandler::~ISrsTsHandler()
 
 SrsTsContext::SrsTsContext()
 {
+    ready = false;
     pure_audio = false;
     vcodec = SrsCodecVideoReserved;
     acodec = SrsCodecAudioReserved1;
@@ -234,6 +238,7 @@ void SrsTsContext::on_pmt_parsed()
 
 void SrsTsContext::reset()
 {
+    ready = false;
     vcodec = SrsCodecVideoReserved;
     acodec = SrsCodecAudioReserved1;
 }
@@ -432,6 +437,9 @@ int SrsTsContext::encode_pat_pmt(SrsFileWriter* writer, int16_t vpid, SrsTsStrea
             return ret;
         }
     }
+    
+    // When PAT and PMT are writen, the context is ready now.
+    ready = true;
 
     return ret;
 }
@@ -439,6 +447,13 @@ int SrsTsContext::encode_pat_pmt(SrsFileWriter* writer, int16_t vpid, SrsTsStrea
 int SrsTsContext::encode_pes(SrsFileWriter* writer, SrsTsMessage* msg, int16_t pid, SrsTsStream sid, bool pure_audio)
 {
     int ret = ERROR_SUCCESS;
+    
+    // Sometimes, the context is not ready(PAT/PMT write failed), error in this situation.
+    if (!ready) {
+        ret = ERROR_TS_CONTEXT_NOT_READY;
+        srs_error("TS: context not ready, ret=%d", ret);
+        return ret;
+    }
 
     if (msg->payload->length() == 0) {
         return ret;
@@ -470,6 +485,14 @@ int SrsTsContext::encode_pes(SrsFileWriter* writer, SrsTsMessage* msg, int16_t p
 
             // it's ok to set pcr equals to dts,
             // @see https://github.com/ossrs/srs/issues/311
+            // Fig. 3.18. Program Clock Reference of Digital-Video-and-Audio-Broadcasting-Technology, page 65
+            // In MPEG-2, these are the "Program Clock Refer- ence" (PCR) values which are
+            // nothing else than an up-to-date copy of the STC counter fed into the transport
+            // stream at a certain time. The data stream thus carries an accurate internal
+            // "clock time". All coding and de- coding processes are controlled by this clock
+            // time. To do this, the receiver, i.e. the MPEG decoder, must read out the
+            // "clock time", namely the PCR values, and compare them with its own internal
+            // system clock, that is to say its own 42 bit counter.
             int64_t pcr = write_pcr? msg->dts : -1;
             
             // TODO: FIXME: finger it why use discontinuity of msg.
@@ -1194,7 +1217,7 @@ int SrsTsAdaptationField::encode(SrsStream* stream)
         // @see https://github.com/ossrs/srs/issues/250#issuecomment-71349370
         int64_t pcrv = program_clock_reference_extension & 0x1ff;
         pcrv |= (const1_value0 << 9) & 0x7E00;
-        pcrv |= (program_clock_reference_base << 15) & 0x1FFFFFFFF000000LL;
+        pcrv |= (program_clock_reference_base << 15) & 0xFFFFFFFF8000LL;
 
         pp = (char*)&pcrv;
         *p++ = pp[5];
@@ -1650,7 +1673,7 @@ int SrsTsPayloadPES::decode(SrsStream* stream, SrsTsMessage** ppmsg)
                 // (1+x)B
                 if (PES_extension_flag_2) {
                     PES_extension_field_length = stream->read_1bytes();
-                    PES_extension_field_length &= 0x07;
+                    PES_extension_field_length &= 0x7F;
 
                     if (PES_extension_field_length > 0) {
                         if (!stream->require(PES_extension_field_length)) {
@@ -2442,7 +2465,7 @@ int SrsTsPayloadPMTESInfo::decode(SrsStream* stream)
     elementary_PID = epv & 0x1FFF;
     
     int16_t eilv = stream->read_2bytes();
-    const1_value1 = (epv >> 12) & 0x0f;
+    const1_value1 = (eilv >> 12) & 0x0f;
     ES_info_length = eilv & 0x0FFF;
 
     if (ES_info_length > 0) {
@@ -2919,10 +2942,8 @@ int SrsTsCache::do_cache_aac(SrsAvcAacCodec* codec, SrsCodecSample* sample)
     return ret;
 }
 
-int SrsTsCache::do_cache_avc(SrsAvcAacCodec* codec, SrsCodecSample* sample)
+void srs_avc_insert_aud(SrsSimpleBuffer* payload, bool& aud_inserted)
 {
-    int ret = ERROR_SUCCESS;
-    
     // mux the samples in annexb format,
     // H.264-AVC-ISO_IEC_14496-10-2012.pdf, page 324.
     /**
@@ -2952,76 +2973,76 @@ int SrsTsCache::do_cache_avc(SrsAvcAacCodec* codec, SrsCodecSample* sample)
      *      19, Coded slice of an auxiliary coded picture without partitioning slice_layer_without_partitioning_rbsp( )
      *      20, Coded slice extension slice_layer_extension_rbsp( )
      * the first ts message of apple sample:
-     *      annexb 4B header, 2B aud(nal_unit_type:6)(0x09 0xf0)
-     *      annexb 4B header, 19B sps(nal_unit_type:7)
-     *      annexb 3B header, 4B pps(nal_unit_type:8)
-     *      annexb 3B header, 12B nalu(nal_unit_type:6)
-     *      annexb 3B header, 21B nalu(nal_unit_type:6)
-     *      annexb 3B header, 2762B nalu(nal_unit_type:5)
-     *      annexb 3B header, 3535B nalu(nal_unit_type:5)
+     *      annexb 4B header, 2B aud(nal_unit_type:6)(0x09 0xf0)(AUD)
+     *      annexb 4B header, 19B sps(nal_unit_type:7)(SPS)
+     *      annexb 3B header, 4B pps(nal_unit_type:8)(PPS)
+     *      annexb 3B header, 12B nalu(nal_unit_type:6)(SEI)
+     *      annexb 3B header, 21B nalu(nal_unit_type:6)(SEI)
+     *      annexb 3B header, 2762B nalu(nal_unit_type:5)(IDR)
+     *      annexb 3B header, 3535B nalu(nal_unit_type:5)(IDR)
      * the second ts message of apple ts sample:
-     *      annexb 4B header, 2B aud(nal_unit_type:6)(0x09 0xf0)
-     *      annexb 3B header, 21B nalu(nal_unit_type:6)
-     *      annexb 3B header, 379B nalu(nal_unit_type:1)
-     *      annexb 3B header, 406B nalu(nal_unit_type:1)
+     *      annexb 4B header, 2B aud(nal_unit_type:6)(0x09 0xf0)(AUD)
+     *      annexb 3B header, 21B nalu(nal_unit_type:6)(SEI)
+     *      annexb 3B header, 379B nalu(nal_unit_type:1)(non-IDR,P/B)
+     *      annexb 3B header, 406B nalu(nal_unit_type:1)(non-IDR,P/B)
+     * @remark we use the sequence of apple samples http://ossrs.net/apple-sample/bipbopall.m3u8
      */
     static u_int8_t fresh_nalu_header[] = { 0x00, 0x00, 0x00, 0x01 };
     static u_int8_t cont_nalu_header[] = { 0x00, 0x00, 0x01 };
     
-    // the aud(access unit delimiter) before each frame.
-    // 7.3.2.4 Access unit delimiter RBSP syntax
-    // H.264-AVC-ISO_IEC_14496-10-2012.pdf, page 66.
-    //
-    // primary_pic_type u(3), the first 3bits, primary_pic_type indicates that the slice_type values
-    //      for all slices of the primary coded picture are members of the set listed in Table 7-5 for
-    //      the given value of primary_pic_type.
-    //      0, slice_type 2, 7
-    //      1, slice_type 0, 2, 5, 7
-    //      2, slice_type 0, 1, 2, 5, 6, 7
-    //      3, slice_type 4, 9
-    //      4, slice_type 3, 4, 8, 9
-    //      5, slice_type 2, 4, 7, 9
-    //      6, slice_type 0, 2, 3, 4, 5, 7, 8, 9
-    //      7, slice_type 0, 1, 2, 3, 4, 5, 6, 7, 8, 9
-    // 7.4.2.4 Access unit delimiter RBSP semantics
-    // H.264-AVC-ISO_IEC_14496-10-2012.pdf, page 102.
-    //
-    // slice_type specifies the coding type of the slice according to Table 7-6.
-    //      0, P (P slice)
-    //      1, B (B slice)
-    //      2, I (I slice)
-    //      3, SP (SP slice)
-    //      4, SI (SI slice)
-    //      5, P (P slice)
-    //      6, B (B slice)
-    //      7, I (I slice)
-    //      8, SP (SP slice)
-    //      9, SI (SI slice)
-    // H.264-AVC-ISO_IEC_14496-10-2012.pdf, page 105.
-    static u_int8_t aud_nalu_7[] = { 0x09, 0xf0};
+    if (!aud_inserted) {
+        aud_inserted = true;
+        payload->append((const char*)fresh_nalu_header, 4);
+    } else {
+        payload->append((const char*)cont_nalu_header, 3);
+    }
+}
+
+int SrsTsCache::do_cache_avc(SrsAvcAacCodec* codec, SrsCodecSample* sample)
+{
+    int ret = ERROR_SUCCESS;
     
-    // always append a aud nalu for each frame.
-    video->payload->append((const char*)fresh_nalu_header, 4);
-    video->payload->append((const char*)aud_nalu_7, 2);
+    // Whether aud inserted.
+    bool aud_inserted = false;
     
-    // when ts message(samples) contains IDR, insert sps+pps.
-    if (sample->has_idr) {
-        // fresh nalu header before sps.
-        if (codec->sequenceParameterSetLength > 0) {
-            // AnnexB prefix, for sps always 4 bytes header
-            video->payload->append((const char*)fresh_nalu_header, 4);
-            // sps
-            video->payload->append(codec->sequenceParameterSetNALUnit, codec->sequenceParameterSetLength);
-        }
-        // cont nalu header before pps.
-        if (codec->pictureParameterSetLength > 0) {
-            // AnnexB prefix, for pps always 3 bytes header
-            video->payload->append((const char*)cont_nalu_header, 3);
-            // pps
-            video->payload->append(codec->pictureParameterSetNALUnit, codec->pictureParameterSetLength);
-        }
+    // Insert a default AUD NALU when no AUD in samples.
+    if (!sample->has_aud) {
+        // the aud(access unit delimiter) before each frame.
+        // 7.3.2.4 Access unit delimiter RBSP syntax
+        // H.264-AVC-ISO_IEC_14496-10-2012.pdf, page 66.
+        //
+        // primary_pic_type u(3), the first 3bits, primary_pic_type indicates that the slice_type values
+        //      for all slices of the primary coded picture are members of the set listed in Table 7-5 for
+        //      the given value of primary_pic_type.
+        //      0, slice_type 2, 7
+        //      1, slice_type 0, 2, 5, 7
+        //      2, slice_type 0, 1, 2, 5, 6, 7
+        //      3, slice_type 4, 9
+        //      4, slice_type 3, 4, 8, 9
+        //      5, slice_type 2, 4, 7, 9
+        //      6, slice_type 0, 2, 3, 4, 5, 7, 8, 9
+        //      7, slice_type 0, 1, 2, 3, 4, 5, 6, 7, 8, 9
+        // 7.4.2.4 Access unit delimiter RBSP semantics
+        // H.264-AVC-ISO_IEC_14496-10-2012.pdf, page 102.
+        //
+        // slice_type specifies the coding type of the slice according to Table 7-6.
+        //      0, P (P slice)
+        //      1, B (B slice)
+        //      2, I (I slice)
+        //      3, SP (SP slice)
+        //      4, SI (SI slice)
+        //      5, P (P slice)
+        //      6, B (B slice)
+        //      7, I (I slice)
+        //      8, SP (SP slice)
+        //      9, SI (SI slice)
+        // H.264-AVC-ISO_IEC_14496-10-2012.pdf, page 105.
+        static u_int8_t default_aud_nalu[] = { 0x09, 0xf0};
+        srs_avc_insert_aud(video->payload, aud_inserted);
+        video->payload->append((const char*)default_aud_nalu, 2);
     }
     
+    bool is_sps_pps_appended = false;
     // all sample use cont nalu header, except the sps-pps before IDR frame.
     for (int i = 0; i < sample->nb_sample_units; i++) {
         SrsCodecSampleUnit* sample_unit = &sample->sample_units[i];
@@ -3037,20 +3058,22 @@ int SrsTsCache::do_cache_avc(SrsAvcAacCodec* codec, SrsCodecSample* sample)
         // H.264-AVC-ISO_IEC_14496-10-2012.pdf, page 83.
         SrsAvcNaluType nal_unit_type = (SrsAvcNaluType)(sample_unit->bytes[0] & 0x1f);
         
-        // ignore SPS/PPS/AUD
-        switch (nal_unit_type) {
-            case SrsAvcNaluTypeSPS:
-            case SrsAvcNaluTypePPS:
-            case SrsAvcNaluTypeAccessUnitDelimiter:
-                continue;
-            default:
-                break;
+        // Insert sps/pps before IDR when there is no sps/pps in samples.
+        // The sps/pps is parsed from sequence header(generally the first flv packet).
+        if (nal_unit_type == SrsAvcNaluTypeIDR && !sample->has_sps_pps && !is_sps_pps_appended) {
+            if (codec->sequenceParameterSetLength > 0) {
+                srs_avc_insert_aud(video->payload, aud_inserted);
+                video->payload->append(codec->sequenceParameterSetNALUnit, codec->sequenceParameterSetLength);
+            }
+            if (codec->pictureParameterSetLength > 0) {
+                srs_avc_insert_aud(video->payload, aud_inserted);
+                video->payload->append(codec->pictureParameterSetNALUnit, codec->pictureParameterSetLength);
+            }
+            is_sps_pps_appended = true;
         }
         
-        // insert cont nalu header before frame.
-        video->payload->append((const char*)cont_nalu_header, 3);
-        
-        // sample data
+        // Insert the NALU to video in annexb.
+        srs_avc_insert_aud(video->payload, aud_inserted);
         video->payload->append(sample_unit->bytes, sample_unit->size);
     }
     

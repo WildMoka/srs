@@ -69,6 +69,7 @@ class SrsCommonMessage;
 class SrsPacket;
 class SrsAmf0Object;
 class IMergeReadHandler;
+class SrsCallPacket;
 
 /****************************************************************************
  *****************************************************************************
@@ -190,8 +191,11 @@ private:
     class AckWindowSize
     {
     public:
-        int ack_window_size;
-        int64_t acked_size;
+        uint32_t window;
+        // number of received bytes.
+        int64_t nb_recv_bytes;
+        // previous responsed sequence number.
+        uint32_t sequence_number;
         
         AckWindowSize();
     };
@@ -227,10 +231,16 @@ private:
     * input chunk size, default to 128, set by peer packet.
     */
     int32_t in_chunk_size;
-    /**
-    * input ack size, when to send the acked packet.
-    */
+    // The input ack window, to response acknowledge to peer,
+    // for example, to respose the encoder, for server got lots of packets.
     AckWindowSize in_ack_size;
+    // The output ack window, to require peer to response the ack.
+    AckWindowSize out_ack_size;
+    // The buffer length set by peer.
+    int32_t in_buffer_length;
+    // Whether print the protocol level debug info.
+    // Generally we print the debug info when got or send first A/V packet.
+    bool show_debug_info;
     /**
     * whether auto response when recv messages.
     * default to true for it's very easy to use the protocol stack.
@@ -486,6 +496,8 @@ private:
     * auto response the ping message.
     */
     virtual int response_ping_message(int32_t timestamp);
+private:
+    virtual void print_debug_info();
 };
 
 /**
@@ -594,6 +606,9 @@ public:
      * strip url, user must strip when update the url.
      */
     virtual void strip();
+public:
+    // Transform it as HTTP request.
+    virtual SrsRequest* as_http();
 };
 
 /**
@@ -620,6 +635,7 @@ enum SrsRtmpConnType
     SrsRtmpConnPlay,
     SrsRtmpConnFMLEPublish,
     SrsRtmpConnFlashPublish,
+    SrsRtmpConnHaivisionPublish,
 };
 std::string srs_client_type_string(SrsRtmpConnType type);
 bool srs_client_type_is_publish(SrsRtmpConnType type);
@@ -979,6 +995,11 @@ public:
      */
     virtual int start_fmle_publish(int stream_id);
     /**
+     * For encoder of Haivision, response the startup request.
+     * @see https://github.com/ossrs/srs/issues/844
+     */
+    virtual int start_haivision_publish(int stream_id);
+    /**
      * process the FMLE unpublish event.
      * @unpublish_tid the unpublish request transaction id.
      */
@@ -1014,6 +1035,7 @@ public:
 private:
     virtual int identify_create_stream_client(SrsCreateStreamPacket* req, int stream_id, SrsRtmpConnType& type, std::string& stream_name, double& duration);
     virtual int identify_fmle_publish_client(SrsFMLEStartPacket* req, SrsRtmpConnType& type, std::string& stream_name);
+    virtual int identify_haivision_publish_client(SrsFMLEStartPacket* req, SrsRtmpConnType& type, std::string& stream_name);
     virtual int identify_flash_publish_client(SrsPublishPacket* req, SrsRtmpConnType& type, std::string& stream_name);
 private:
     virtual int identify_play_client(SrsPlayPacket* req, SrsRtmpConnType& type, std::string& stream_name, double& duration);
@@ -1282,7 +1304,7 @@ public:
 };
 
 /**
-* FMLE start publish: ReleaseStream/PublishStream
+* FMLE start publish: ReleaseStream/PublishStream/FCPublish/FCUnpublish
 */
 class SrsFMLEStartPacket : public SrsPacket
 {
@@ -1843,10 +1865,13 @@ protected:
 class SrsAcknowledgementPacket : public SrsPacket
 {
 public:
-    int32_t sequence_number;
+    uint32_t sequence_number;
 public:
     SrsAcknowledgementPacket();
     virtual ~SrsAcknowledgementPacket();
+// decode functions for concrete packet to override.
+public:
+    virtual int decode(SrsStream* stream);
 // encode functions for concrete packet to override.
 public:
     virtual int get_prefer_cid();

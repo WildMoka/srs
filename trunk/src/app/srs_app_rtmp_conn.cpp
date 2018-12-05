@@ -53,6 +53,7 @@ using namespace std;
 #include <srs_kernel_utility.hpp>
 #include <srs_app_security.hpp>
 #include <srs_app_statistic.hpp>
+#include <srs_rtmp_utility.hpp>
 
 // when stream is busy, for example, streaming is already
 // publishing, when a new client to request to publish,
@@ -95,6 +96,7 @@ SrsRtmpConn::SrsRtmpConn(SrsServer* svr, st_netfd_t c)
     realtime = SRS_PERF_MIN_LATENCY_ENABLED;
     send_min_interval = 0;
     tcp_nodelay = false;
+    client_type = SrsRtmpConnUnknown;
     
     _srs_config->subscribe(this);
 }
@@ -147,30 +149,6 @@ int SrsRtmpConn::do_cycle()
     
     // set client ip to request.
     req->ip = ip;
-    
-    // discovery vhost, resolve the vhost from config
-    SrsConfDirective* parsed_vhost = _srs_config->get_vhost(req->vhost);
-    if (parsed_vhost) {
-        req->vhost = parsed_vhost->arg0();
-    }
-    
-    srs_info("discovery app success. schema=%s, vhost=%s, port=%s, app=%s",
-        req->schema.c_str(), req->vhost.c_str(), req->port.c_str(), req->app.c_str());
-    
-    if (req->schema.empty() || req->vhost.empty() || req->port.empty() || req->app.empty()) {
-        ret = ERROR_RTMP_REQ_TCURL;
-        srs_error("discovery tcUrl failed. "
-            "tcUrl=%s, schema=%s, vhost=%s, port=%s, app=%s, ret=%d",
-            req->tcUrl.c_str(), req->schema.c_str(), req->vhost.c_str(), req->port.c_str(), req->app.c_str(), ret);
-        return ret;
-    }
-    
-    // check vhost
-    if ((ret = check_vhost()) != ERROR_SUCCESS) {
-        srs_error("check vhost failed. ret=%d", ret);
-        return ret;
-    }
-    srs_verbose("check vhost success.");
     
     srs_trace("connect app, "
         "tcUrl=%s, pageUrl=%s, swfUrl=%s, schema=%s, vhost=%s, port=%s, app=%s, args=%s", 
@@ -225,8 +203,11 @@ int SrsRtmpConn::on_reload_vhost_removed(string vhost)
     // if the vhost connected is removed, disconnect the client.
     srs_trace("vhost %s removed/disabled, close client url=%s", 
         vhost.c_str(), req->get_stream_url().c_str());
-        
-    srs_close_stfd(stfd);
+    
+    // should never close the fd in another thread,
+    // one fd should managed by one thread, we should use interrupt instead.
+    // so we just ignore the vhost enabled event.
+    //srs_close_stfd(stfd);
     
     return ret;
 }
@@ -372,19 +353,6 @@ int SrsRtmpConn::service_cycle()
         return bandwidth->bandwidth_check(rtmp, skt, req, local_ip);
     }
     
-    // do token traverse before serve it.
-    // @see https://github.com/ossrs/srs/pull/239
-    if (true) {
-        bool vhost_is_edge = _srs_config->get_vhost_is_edge(req->vhost);
-        bool edge_traverse = _srs_config->get_vhost_edge_token_traverse(req->vhost);
-        if (vhost_is_edge && edge_traverse) {
-            if ((ret = check_edge_token_traverse_auth()) != ERROR_SUCCESS) {
-                srs_warn("token auth failed, ret=%d", ret);
-                return ret;
-            }
-        }
-    }
-    
     // set chunk size to larger.
     // set the chunk size before any larger response greater than 128,
     // to make OBS happy, @see https://github.com/ossrs/srs/issues/454
@@ -467,9 +435,48 @@ int SrsRtmpConn::stream_service_cycle()
         }
         return ret;
     }
+    
+    srs_discovery_tc_url(req->tcUrl, req->schema, req->host, req->vhost, req->app, req->stream, req->port, req->param);
     req->strip();
-    srs_trace("client identified, type=%s, stream_name=%s, duration=%.2f", 
-        srs_client_type_string(type).c_str(), req->stream.c_str(), req->duration);
+    srs_trace("client identified, type=%s, stream_name=%s, duration=%.2f, param=%s",
+        srs_client_type_string(type).c_str(), req->stream.c_str(), req->duration, req->param.c_str());
+    
+    // discovery vhost, resolve the vhost from config
+    SrsConfDirective* parsed_vhost = _srs_config->get_vhost(req->vhost);
+    if (parsed_vhost) {
+        req->vhost = parsed_vhost->arg0();
+    }
+    
+    if (req->schema.empty() || req->vhost.empty() || req->port.empty() || req->app.empty()) {
+        ret = ERROR_RTMP_REQ_TCURL;
+        srs_error("discovery tcUrl failed. "
+                  "tcUrl=%s, schema=%s, vhost=%s, port=%s, app=%s, ret=%d",
+                  req->tcUrl.c_str(), req->schema.c_str(), req->vhost.c_str(), req->port.c_str(), req->app.c_str(), ret);
+        return ret;
+    }
+    
+    if ((ret = check_vhost()) != ERROR_SUCCESS) {
+        srs_error("check vhost failed. ret=%d", ret);
+        return ret;
+    }
+    
+    srs_trace("connected stream, tcUrl=%s, pageUrl=%s, swfUrl=%s, schema=%s, vhost=%s, port=%s, app=%s, stream=%s, param=%s, args=%s",
+        req->tcUrl.c_str(), req->pageUrl.c_str(), req->swfUrl.c_str(),
+        req->schema.c_str(), req->vhost.c_str(), req->port.c_str(),
+        req->app.c_str(), req->stream.c_str(), req->param.c_str(), (req->args? "(obj)":"null"));
+    
+    // do token traverse before serve it.
+    // @see https://github.com/ossrs/srs/pull/239
+    if (true) {
+        bool vhost_is_edge = _srs_config->get_vhost_is_edge(req->vhost);
+        bool edge_traverse = _srs_config->get_vhost_edge_token_traverse(req->vhost);
+        if (vhost_is_edge && edge_traverse) {
+            if ((ret = check_edge_token_traverse_auth()) != ERROR_SUCCESS) {
+                srs_warn("token auth failed, ret=%d", ret);
+                return ret;
+            }
+        }
+    }
     
     // security check
     if ((ret = security->check(type, ip, req)) != ERROR_SUCCESS) {
@@ -477,17 +484,23 @@ int SrsRtmpConn::stream_service_cycle()
         return ret;
     }
     srs_info("security check ok");
+    
+    // Never allow the empty stream name, for HLS may write to a file with empty name.
+    // @see https://github.com/ossrs/srs/issues/834
+    if (req->stream.empty()) {
+        ret = ERROR_RTMP_STREAM_NAME_EMPTY;
+        srs_error("RTMP: Empty stream name not allowed, ret=%d", ret);
+        return ret;
+    }
 
     // client is identified, set the timeout to service timeout.
     rtmp->set_recv_timeout(SRS_CONSTS_RTMP_RECV_TIMEOUT_US);
     rtmp->set_send_timeout(SRS_CONSTS_RTMP_SEND_TIMEOUT_US);
     
     // find a source to serve.
-    SrsSource* source = SrsSource::fetch(req);
-    if (!source) {
-        if ((ret = SrsSource::create(req, server, server, &source)) != ERROR_SUCCESS) {
-            return ret;
-        }
+    SrsSource* source = NULL;
+    if ((ret = SrsSource::fetch_or_create(req, server, &source)) != ERROR_SUCCESS) {
+        return ret;
     }
     srs_assert(source != NULL);
     
@@ -505,6 +518,7 @@ int SrsRtmpConn::stream_service_cycle()
         source->source_id(), source->source_id());
     source->set_cache(enabled_cache);
     
+    client_type = type;
     switch (type) {
         case SrsRtmpConnPlay: {
             srs_verbose("start to play stream %s.", req->stream.c_str());
@@ -529,6 +543,16 @@ int SrsRtmpConn::stream_service_cycle()
             srs_verbose("FMLE start to publish stream %s.", req->stream.c_str());
             
             if ((ret = rtmp->start_fmle_publish(res->stream_id)) != ERROR_SUCCESS) {
+                srs_error("start to publish stream failed. ret=%d", ret);
+                return ret;
+            }
+            
+            return publishing(source);
+        }
+        case SrsRtmpConnHaivisionPublish: {
+            srs_verbose("Haivision start to publish stream %s.", req->stream.c_str());
+            
+            if ((ret = rtmp->start_haivision_publish(res->stream_id)) != ERROR_SUCCESS) {
                 srs_error("start to publish stream failed. ret=%d", ret);
                 return ret;
             }
@@ -827,7 +851,9 @@ int SrsRtmpConn::publishing(SrsSource* source)
         // use isolate thread to recv,
         // @see: https://github.com/ossrs/srs/issues/237
         SrsPublishRecvThread trd(rtmp, req, 
-            st_netfd_fileno(stfd), 0, this, source, true, vhost_is_edge);
+            st_netfd_fileno(stfd), 0, this, source,
+            client_type != SrsRtmpConnFlashPublish,
+            vhost_is_edge);
 
         srs_info("start to publish stream %s success", req->stream.c_str());
         ret = do_publishing(source, &trd);
@@ -883,6 +909,7 @@ int SrsRtmpConn::do_publishing(SrsSource* source, SrsPublishRecvThread* trd)
     }
 
     int64_t nb_msgs = 0;
+    uint64_t nb_frames = 0;
     while (!disposed) {
         pprint->elapse();
         
@@ -918,6 +945,14 @@ int SrsRtmpConn::do_publishing(SrsSource* source, SrsPublishRecvThread* trd)
             break;
         }
         nb_msgs = trd->nb_msgs();
+        
+        // Update the stat for video fps.
+        // @remark https://github.com/ossrs/srs/issues/851
+        SrsStatistic* stat = SrsStatistic::instance();
+        if ((ret = stat->on_video_frames(req, (int)(trd->nb_video_frames() - nb_frames))) != ERROR_SUCCESS) {
+            return ret;
+        }
+        nb_frames = trd->nb_video_frames();
 
         // reportable
         if (pprint->can_print()) {

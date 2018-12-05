@@ -362,7 +362,23 @@ if [ $SRS_EXPORT_LIBRTMP_PROJECT = NO ]; then
 fi
 
 # the sed command
-SED="sed -i" && if [ $OS_IS_OSX = YES ]; then SED="sed -i ''"; fi
+function sed_utility() {
+    if [ $OS_IS_OSX = YES ]; then
+        sed -i '' "$@"
+    else
+        sed -i "$@"
+    fi
+    
+    ret=$?; if [[ $ret -ne 0 ]]; then
+        if [ $OS_IS_OSX = YES ]; then
+            echo "sed -i '' \"$@\""
+        else
+            echo "sed -i \"$@\""
+        fi
+        return $ret
+    fi
+}
+SED="sed_utility" && echo "SED is $SED"
 
 #####################################################################################
 # check the os.
@@ -406,6 +422,7 @@ if [ $SRS_EXPORT_LIBRTMP_PROJECT = NO ]; then
                 patch -p0 < ../../3rdparty/patches/1.st.arm.patch &&
                 patch -p0 < ../../3rdparty/patches/3.st.osx.kqueue.patch &&
                 patch -p0 < ../../3rdparty/patches/4.st.disable.examples.patch &&
+                patch -p0 < ../../3rdparty/patches/6.st.osx10.14.build.patch &&
                 make ${_ST_MAKE} CC=${SrsArmCC} AR=${SrsArmAR} LD=${SrsArmLD} RANDLIB=${SrsArmRANDLIB} EXTRA_CFLAGS="${_ST_EXTRA_CFLAGS}" &&
                 cd .. && rm -rf st && ln -sf st-1.9/obj st &&
                 cd .. && touch ${SRS_OBJS}/_flag.st.cross.build.tmp
@@ -423,6 +440,7 @@ if [ $SRS_EXPORT_LIBRTMP_PROJECT = NO ]; then
                 patch -p0 < ../../3rdparty/patches/1.st.arm.patch &&
                 patch -p0 < ../../3rdparty/patches/3.st.osx.kqueue.patch &&
                 patch -p0 < ../../3rdparty/patches/4.st.disable.examples.patch &&
+                patch -p0 < ../../3rdparty/patches/6.st.osx10.14.build.patch &&
                 make ${_ST_MAKE} EXTRA_CFLAGS="${_ST_EXTRA_CFLAGS}" &&
                 cd .. && rm -rf st && ln -sf st-1.9/obj st &&
                 cd .. && rm -f ${SRS_OBJS}/_flag.st.cross.build.tmp
@@ -483,10 +501,8 @@ fi
 function write_nginx_html5()
 {
     cat<<END > ${html_file}
-<video width="640" height="360"
-        autoplay controls autobuffer 
-        src="${hls_stream}"
-        type="application/vnd.apple.mpegurl">
+<video autoplay controls autobuffer type="application/vnd.apple.mpegurl"
+    src="${hls_stream}">
 </video>
 END
 }
@@ -662,13 +678,13 @@ if [ $SRS_SSL = YES ]; then
 fi
 
 #####################################################################################
-# live transcoding, ffmpeg-2.1, x264-core138, lame-3.99.5, libaacplus-2.0.2.
+# live transcoding, ffmpeg-4.1, x264-core157, lame-3.99.5, libaacplus-2.0.2.
 #####################################################################################
 if [ $SRS_FFMPEG_TOOL = YES ]; then
     if [[ -f ${SRS_OBJS}/ffmpeg/bin/ffmpeg ]]; then
-        echo "ffmpeg-2.1 is ok.";
+        echo "ffmpeg-4.1 is ok.";
     else
-        echo "build ffmpeg-2.1"; 
+        echo "build ffmpeg-4.1"; 
         (
             cd ${SRS_OBJS} && pwd_dir=`pwd` && 
             rm -rf ffmepg.src && mkdir -p ffmpeg.src && cd ffmpeg.src &&
@@ -677,8 +693,8 @@ if [ $SRS_FFMPEG_TOOL = YES ]; then
         )
     fi
     # check status
-    ret=$?; if [[ $ret -ne 0 ]]; then echo "build ffmpeg-2.1 failed, ret=$ret"; exit $ret; fi
-    if [ ! -f ${SRS_OBJS}/ffmpeg/bin/ffmpeg ]; then echo "build ffmpeg-2.1 failed."; exit -1; fi
+    ret=$?; if [[ $ret -ne 0 ]]; then echo "build ffmpeg-4.1 failed, ret=$ret"; exit $ret; fi
+    if [ ! -f ${SRS_OBJS}/ffmpeg/bin/ffmpeg ]; then echo "build ffmpeg-4.1 failed."; exit -1; fi
 fi
 
 #####################################################################################

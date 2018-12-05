@@ -61,14 +61,6 @@ using namespace std;
 // reset the piece id when deviation overflow this.
 #define SRS_JUMP_WHEN_PIECE_DEVIATION 20
 
-ISrsHlsHandler::ISrsHlsHandler()
-{
-}
-
-ISrsHlsHandler::~ISrsHlsHandler()
-{
-}
-
 /**
  * * the HLS section, only available when HLS enabled.
  * */
@@ -294,7 +286,6 @@ string SrsDvrAsyncCallOnHlsNotify::to_string()
 SrsHlsMuxer::SrsHlsMuxer()
 {
     req = NULL;
-    handler = NULL;
     hls_fragment = hls_window = 0;
     hls_aof_ratio = 1.0;
     deviation_ts = 0;
@@ -384,11 +375,9 @@ int SrsHlsMuxer::deviation()
     return deviation_ts;
 }
 
-int SrsHlsMuxer::initialize(ISrsHlsHandler* h)
+int SrsHlsMuxer::initialize()
 {
     int ret = ERROR_SUCCESS;
-    
-    handler = h;
     
     if ((ret = async->start()) != ERROR_SUCCESS) {
         return ret;
@@ -425,19 +414,10 @@ int SrsHlsMuxer::update_config(SrsRequest* r, string entry_prefix,
 
     // when update config, reset the history target duration.
     max_td = (int)(fragment * _srs_config->get_hls_td_ratio(r->vhost));
-
-    std::string storage = _srs_config->get_hls_storage(r->vhost);
-    if (storage == "ram") {
-        should_write_cache = true;
-        should_write_file = false;
-    } else if (storage == "disk") {
-        should_write_cache = false;
-        should_write_file = true;
-    } else {
-        srs_assert(storage == "both");
-        should_write_cache = true;
-        should_write_file = true;
-    }
+    
+    // TODO: FIXME: refine better for SRS2 only support disk.
+    should_write_cache = false;
+    should_write_file = true;
     
     // create m3u8 dir once.
     m3u8_dir = srs_path_dirname(m3u8);
@@ -755,13 +735,6 @@ int SrsHlsMuxer::segment_close(string log_desc)
         srs_info("%s reap ts segment, sequence_no=%d, uri=%s, duration=%.2f, start=%"PRId64,
             log_desc.c_str(), current->sequence_no, current->uri.c_str(), current->duration, 
             current->segment_start_dts);
-        
-        // notify handler for update ts.
-        srs_assert(current->writer);
-        if (handler && (ret = handler->on_update_ts(req, current->uri, current->writer->cache())) != ERROR_SUCCESS) {
-            srs_error("notify handler for update ts failed. ret=%d", ret);
-            return ret;
-        }
     
         // close the muxer of finished segment.
         srs_freep(current->muxer);
@@ -826,13 +799,6 @@ int SrsHlsMuxer::segment_close(string log_desc)
         if (hls_cleanup && should_write_file) {
             if (unlink(segment->full_path.c_str()) < 0) {
                 srs_warn("cleanup unlink path failed, file=%s.", segment->full_path.c_str());
-            }
-        }
-        
-        if (should_write_cache) {
-            if ((ret = handler->on_remove_ts(req, segment->uri)) != ERROR_SUCCESS) {
-                srs_warn("remove the ts from ram hls failed. ret=%d", ret);
-                return ret;
             }
         }
         
@@ -957,12 +923,6 @@ int SrsHlsMuxer::_refresh_m3u8(string m3u8_file)
         return ret;
     }
     srs_info("write m3u8 %s success.", m3u8_file.c_str());
-
-    // notify handler for update m3u8.
-    if (handler && (ret = handler->on_update_m3u8(req, writer.cache())) != ERROR_SUCCESS) {
-        srs_error("notify handler for update m3u8 failed. ret=%d", ret);
-        return ret;
-    }
     
     return ret;
 }
@@ -1110,11 +1070,6 @@ int SrsHlsCache::write_video(SrsAvcAacCodec* codec, SrsHlsMuxer* muxer, int64_t 
         //      a. wait keyframe and got keyframe.
         //      b. always reap when not wait keyframe.
         if (!muxer->wait_keyframe() || sample->frame_type == SrsCodecVideoAVCFrameKeyFrame) {
-            // when wait keyframe, there must exists idr frame in sample.
-            if (!sample->has_idr && muxer->wait_keyframe()) {
-                srs_warn("hls: ts starts without IDR, first nalu=%d, idr=%d", sample->first_nalu_type, sample->has_idr);
-            }
-            
             // reap the segment, which will also flush the video.
             if ((ret = reap_segment("video", muxer, cache->video->dts)) != ERROR_SUCCESS) {
                 return ret;
@@ -1171,7 +1126,6 @@ SrsHls::SrsHls()
 {
     _req = NULL;
     source = NULL;
-    handler = NULL;
     
     hls_enabled = false;
     hls_can_dispose = false;
@@ -1205,6 +1159,13 @@ void SrsHls::dispose()
 {
     if (hls_enabled) {
         on_unpublish();
+    }
+    
+    // Ignore when hls_dispose disabled.
+    // @see https://github.com/ossrs/srs/issues/865
+    int hls_dispose = _srs_config->get_hls_dispose(_req->vhost);
+    if (!hls_dispose) {
+        return;
     }
     
     muxer->dispose();
@@ -1244,14 +1205,16 @@ int SrsHls::cycle()
     return ret;
 }
 
-int SrsHls::initialize(SrsSource* s, ISrsHlsHandler* h)
+int SrsHls::initialize(SrsSource* s, SrsRequest* r)
 {
     int ret = ERROR_SUCCESS;
 
-    source = s;
-    handler = h;
+    srs_assert(!_req);
+    _req = r->copy();
 
-    if ((ret = muxer->initialize(h)) != ERROR_SUCCESS) {
+    source = s;
+
+    if ((ret = muxer->initialize()) != ERROR_SUCCESS) {
         return ret;
     }
 
@@ -1261,9 +1224,6 @@ int SrsHls::initialize(SrsSource* s, ISrsHlsHandler* h)
 int SrsHls::on_publish(SrsRequest* req, bool fetch_sequence_header)
 {
     int ret = ERROR_SUCCESS;
-    
-    srs_freep(_req);
-    _req = req->copy();
     
     // update the hls time, for hls_dispose.
     last_update_time = srs_get_system_time_ms();
