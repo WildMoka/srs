@@ -2130,7 +2130,13 @@ void SrsSource::on_unpublish()
     // donot clear the sequence header, for it maybe not changed,
     // when drop dup sequence header, drop the metadata also.
     gop_cache->clear();
-    
+
+    // WILDMOKA: Clear the cache in case the source changes format (ADE will not reopen correctly)
+    srs_freep(cache_metadata);
+    srs_freep(cache_sh_video);
+    srs_freep(cache_sh_audio);
+    // END WILDMOKA
+
     srs_info("clear cache/metadata when unpublish.");
     srs_trace("cleanup when unpublish");
     
