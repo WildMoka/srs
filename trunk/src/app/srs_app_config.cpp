@@ -78,12 +78,10 @@ const char* _srs_version = "XCORE-"RTMP_SIG_SRS_SERVER;
 #define SRS_CONF_DEFAULT_HLS_TD_RATIO 1.5
 #define SRS_CONF_DEFAULT_HLS_AOF_RATIO 2.0
 #define SRS_CONF_DEFAULT_HLS_WINDOW 60
-#define SRS_CONF_DEFAULT_HLS_ON_ERROR_IGNORE "continue"
+#define SRS_CONF_DEFAULT_HLS_ON_ERROR_IGNORE "ignore"
 #define SRS_CONF_DEFAULT_HLS_ON_ERROR_DISCONNECT "disconnect"
 #define SRS_CONF_DEFAULT_HLS_ON_ERROR_CONTINUE "continue"
-#define SRS_CONF_DEFAULT_HLS_ON_ERROR SRS_CONF_DEFAULT_HLS_ON_ERROR_IGNORE
-#define SRS_CONF_DEFAULT_HLS_STORAGE "disk"
-#define SRS_CONF_DEFAULT_HLS_MOUNT "[vhost]/[app]/[stream].m3u8"
+#define SRS_CONF_DEFAULT_HLS_ON_ERROR SRS_CONF_DEFAULT_HLS_ON_ERROR_CONTINUE
 #define SRS_CONF_DEFAULT_HLS_ACODEC "aac"
 #define SRS_CONF_DEFAULT_HLS_VCODEC "h264"
 #define SRS_CONF_DEFAULT_HLS_CLEANUP true
@@ -1339,11 +1337,6 @@ int SrsConfig::parse_options(int argc, char** argv)
         }
     }
     
-    // cwd
-    char cwd[256];
-    getcwd(cwd, sizeof(cwd));
-    _cwd = cwd;
-    
     // config
     show_help = true;
     for (int i = 1; i < argc; i++) {
@@ -1407,6 +1400,18 @@ int SrsConfig::parse_options(int argc, char** argv)
             srs_trace("write log to console");
         }
     }
+    
+    return ret;
+}
+
+int SrsConfig::initialize_cwd()
+{
+    int ret = ERROR_SUCCESS;
+    
+    // cwd
+    char cwd[256];
+    getcwd(cwd, sizeof(cwd));
+    _cwd = cwd;
     
     return ret;
 }
@@ -1567,7 +1572,7 @@ int SrsConfig::check_config()
             && n != "max_connections" && n != "daemon" && n != "heartbeat"
             && n != "http_api" && n != "stats" && n != "vhost" && n != "pithy_print_ms"
             && n != "http_stream" && n != "http_server" && n != "stream_caster"
-            && n != "utc_time"
+            && n != "utc_time" && n != "work_dir" && n != "asprocess"
         ) {
             ret = ERROR_SYSTEM_CONFIG_INVALID;
             srs_error("unsupported directive %s, ret=%d", n.c_str(), ret);
@@ -1899,6 +1904,11 @@ int SrsConfig::check_config()
                         srs_error("unsupported vhost hls directive %s, ret=%d", m.c_str(), ret);
                         return ret;
                     }
+                    
+                    // TODO: FIXME: remove it in future.
+                    if (m == "hls_storage" || m == "hls_mount") {
+                        srs_warn("HLS RAM is removed from SRS2 to SRS3+, please read https://github.com/ossrs/srs/issues/513.");
+                    }
                 }
             } else if (n == "http_hooks") {
                 for (int j = 0; j < (int)conf->directives.size(); j++) {
@@ -2055,6 +2065,13 @@ int SrsConfig::check_config()
         // TODO: FIXME: required http server when hls storage is ram or both.
     }
     
+    // asprocess conflict with daemon
+    if (get_asprocess() && get_deamon()) {
+        ret = ERROR_SYSTEM_CONFIG_INVALID;
+        srs_error("daemon conflict with asprocess, ret=%d", ret);
+        return ret;
+    }
+    
     return ret;
 }
 
@@ -2167,6 +2184,29 @@ bool SrsConfig::get_utc_time()
     SrsConfDirective* conf = root->get("utc_time");
     if (!conf || conf->arg0().empty()) {
         return SRS_CONF_DEFAULT_UTC_TIME;
+    }
+    
+    return SRS_CONF_PERFER_FALSE(conf->arg0());
+}
+
+string SrsConfig::get_work_dir() {
+    static string DEFAULT = "./";
+    
+    SrsConfDirective* conf = root->get("work_dir");
+    if( !conf || conf->arg0().empty()) {
+        return DEFAULT;
+    }
+    
+    return conf->arg0();
+}
+
+bool SrsConfig::get_asprocess()
+{
+    static bool DEFAULT = false;
+    
+    SrsConfDirective* conf = root->get("asprocess");
+    if (!conf || conf->arg0().empty()) {
+        return DEFAULT;
     }
     
     return SRS_CONF_PERFER_FALSE(conf->arg0());
@@ -3756,40 +3796,6 @@ string SrsConfig::get_hls_on_error(string vhost)
     return conf->arg0();
 }
 
-string SrsConfig::get_hls_storage(string vhost)
-{
-    SrsConfDirective* hls = get_hls(vhost);
-    
-    if (!hls) {
-        return SRS_CONF_DEFAULT_HLS_STORAGE;
-    }
-    
-    SrsConfDirective* conf = hls->get("hls_storage");
-    
-    if (!conf) {
-        return SRS_CONF_DEFAULT_HLS_STORAGE;
-    }
-
-    return conf->arg0();
-}
-
-string SrsConfig::get_hls_mount(string vhost)
-{
-    SrsConfDirective* hls = get_hls(vhost);
-    
-    if (!hls) {
-        return SRS_CONF_DEFAULT_HLS_MOUNT;
-    }
-    
-    SrsConfDirective* conf = hls->get("hls_mount");
-    
-    if (!conf) {
-        return SRS_CONF_DEFAULT_HLS_MOUNT;
-    }
-
-    return conf->arg0();
-}
-
 string SrsConfig::get_hls_acodec(string vhost)
 {
     SrsConfDirective* hls = get_hls(vhost);
@@ -4345,20 +4351,20 @@ bool SrsConfig::get_vhost_http_remux_hstrs(string vhost)
 {
     SrsConfDirective* conf = get_vhost(vhost);
     if (!conf) {
-        return false;
+        return true;
     }
     
     conf = conf->get("http_remux");
     if (!conf) {
-        return false;
+        return true;
     }
     
     conf = conf->get("hstrs");
     if (!conf || conf->arg0().empty()) {
-        return false;
+        return true;
     }
     
-    return SRS_CONF_PERFER_FALSE(conf->arg0());
+    return SRS_CONF_PERFER_TRUE(conf->arg0());
 }
 
 SrsConfDirective* SrsConfig::get_heartbeart()

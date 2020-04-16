@@ -27,7 +27,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 // for srs-librtmp, @see https://github.com/ossrs/srs/issues/213
 #ifndef _WIN32
-    #define SOCKET_ETIME ETIME
+    #define SOCKET_ETIME EWOULDBLOCK
     #define SOCKET_ECONNRESET ECONNRESET
 
     #define SOCKET_ERRNO() errno
@@ -135,8 +135,12 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
         SrsBlockSyncSocket* skt = (SrsBlockSyncSocket*)ctx;
         
         int ret = ERROR_SUCCESS;
-        
-        ssize_t nb_read = ::recv(skt->fd, (char*)buf, size, 0);
+
+#ifdef _WIN32
+        ssize_t nb_read = (int)::recv(skt->fd, (char*)buf, (int)size, 0);
+#else
+        ssize_t nb_read = (int)::recv(skt->fd, (char*)buf, size, 0);
+#endif
         
         if (nread) {
             *nread = nb_read;
@@ -160,10 +164,33 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
         
         return ret;
     }
-    void srs_hijack_io_set_recv_timeout(srs_hijack_io_t ctx, int64_t timeout_us)
+    int srs_hijack_io_set_recv_timeout(srs_hijack_io_t ctx, int64_t timeout_us)
     {
         SrsBlockSyncSocket* skt = (SrsBlockSyncSocket*)ctx;
+
+#ifdef _WIN32
+        DWORD tv = (DWORD)(timeout_us/1000);
+
+        // To convert tv to const char* to make VS2015 happy.
+        if (setsockopt(skt->fd, SOL_SOCKET, SO_SNDTIMEO, (const char*)&tv, sizeof(tv)) == -1) {
+            return SOCKET_ERRNO();
+        }
+#else
+        int sec = (int)(timeout_us / 1000000LL);
+        int microsec = (int)(timeout_us % 1000000LL);
+
+        sec = srs_max(0, sec);
+        microsec = srs_max(0, microsec);
+
+        struct timeval tv = { sec , microsec };
+        if (setsockopt(skt->fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) == -1) {
+            return SOCKET_ERRNO();
+        }
+#endif
+
         skt->recv_timeout = timeout_us;
+        
+        return ERROR_SUCCESS;
     }
     int64_t srs_hijack_io_get_recv_timeout(srs_hijack_io_t ctx)
     {
@@ -175,10 +202,33 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
         SrsBlockSyncSocket* skt = (SrsBlockSyncSocket*)ctx;
         return skt->recv_bytes;
     }
-    void srs_hijack_io_set_send_timeout(srs_hijack_io_t ctx, int64_t timeout_us)
+    int srs_hijack_io_set_send_timeout(srs_hijack_io_t ctx, int64_t timeout_us)
     {
         SrsBlockSyncSocket* skt = (SrsBlockSyncSocket*)ctx;
+
+#ifdef _WIN32
+        DWORD tv = (DWORD)(timeout_us/1000);
+
+        // To convert tv to const char* to make VS2015 happy.
+        if (setsockopt(skt->fd, SOL_SOCKET, SO_SNDTIMEO, (const char*)&tv, sizeof(tv)) == -1) {
+            return SOCKET_ERRNO();
+        }
+#else
+        int sec = (int)(timeout_us / 1000000LL);
+        int microsec = (int)(timeout_us % 1000000LL);
+
+        sec = srs_max(0, sec);
+        microsec = srs_max(0, microsec);
+
+        struct timeval tv = { sec , microsec };
+        if (setsockopt(skt->fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)) == -1) {
+            return SOCKET_ERRNO();
+        }
+#endif
+
         skt->send_timeout = timeout_us;
+        
+        return ERROR_SUCCESS;
     }
     int64_t srs_hijack_io_get_send_timeout(srs_hijack_io_t ctx)
     {
@@ -196,7 +246,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
         
         int ret = ERROR_SUCCESS;
         
-        ssize_t nb_write = ::writev(skt->fd, iov, iov_size);
+        ssize_t nb_write = ::writev((int)skt->fd, iov, iov_size);
         
         if (nwrite) {
             *nwrite = nb_write;
@@ -255,8 +305,12 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
         SrsBlockSyncSocket* skt = (SrsBlockSyncSocket*)ctx;
         
         int ret = ERROR_SUCCESS;
-        
-        ssize_t nb_write = ::send(skt->fd, (char*)buf, size, 0);
+
+#ifdef _WIN32
+        ssize_t nb_write = (int)::send(skt->fd, (char*)buf, (int)size, 0);
+#else
+        ssize_t nb_write = (int)::send(skt->fd, (char*)buf, size, 0);
+#endif
         
         if (nwrite) {
             *nwrite = nb_write;

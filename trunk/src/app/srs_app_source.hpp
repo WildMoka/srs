@@ -62,7 +62,6 @@ class SrsDvr;
 class SrsEncoder;
 #endif
 class SrsStream;
-class ISrsHlsHandler;
 #ifdef SRS_AUTO_HDS
 class SrsHds;
 #endif
@@ -418,27 +417,27 @@ private:
     static std::map<std::string, SrsSource*> pool;
 public:
     /**
-    * find stream by vhost/app/stream.
+    *  create source when fetch from cache failed.
     * @param r the client request.
     * @param h the event handler for source.
-    * @param hh the event handler for hls.
     * @param pps the matched source, if success never be NULL.
     */
-    static int create(SrsRequest* r, ISrsSourceHandler* h, ISrsHlsHandler* hh, SrsSource** pps);
+    static int fetch_or_create(SrsRequest* r, ISrsSourceHandler* h, SrsSource** pps);
+private:
     /**
     * get the exists source, NULL when not exists.
     * update the request and return the exists source.
     */
     static SrsSource* fetch(SrsRequest* r);
-    /**
-    * get the exists source by stream info(vhost, app, stream), NULL when not exists.
-    */
-    static SrsSource* fetch(std::string vhost, std::string app, std::string stream);
+public:
     /**
      * dispose and cycle all sources.
      */
     static void dispose_all();
     static int cycle_all();
+private:
+    static int do_cycle_all();
+public:
     /**
     * when system exit, destroy the sources,
     * for gmc to analysis mem leaks.
@@ -451,6 +450,8 @@ private:
     // when source id changed, for example, the edge reconnect,
     // invoke the on_source_id_changed() to let all clients know.
     int _source_id;
+    // previous source id.
+    int _pre_source_id;
     // deep copy of client request.
     SrsRequest* _req;
     // to delivery stream to clients.
@@ -501,6 +502,9 @@ private:
     */
     // TODO: FIXME: to support reload atc.
     bool atc;
+    // last die time, when all consumers quit and no publisher,
+    // we will remove the source when source die.
+    int64_t die_at;
 private:
     SrsSharedPtrMessage* cache_metadata;
     // the cached video sequence header.
@@ -513,12 +517,14 @@ public:
 public:
     virtual void dispose();
     virtual int cycle();
+    // remove source when expired.
+    virtual bool expired();
 // initialize, get and setter.
 public:
     /**
     * initialize the hls with handlers.
     */
-    virtual int initialize(SrsRequest* r, ISrsSourceHandler* h, ISrsHlsHandler* hh);
+    virtual int initialize(SrsRequest* r, ISrsSourceHandler* h);
 // interface ISrsReloadHandler
 public:
     virtual int on_reload_vhost_atc(std::string vhost);
@@ -543,6 +549,7 @@ public:
     virtual int on_source_id_changed(int id);
     // get current source id.
     virtual int source_id();
+    virtual int pre_source_id();
 // logic data methods
 public:
     virtual bool can_publish(bool is_edge);

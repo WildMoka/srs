@@ -410,7 +410,7 @@ VOID TEST(KernelFlvTest, FlvEncoderWriteHeader)
     char flv_header[] = {
         'F', 'L', 'V', // Signatures "FLV"
         (char)0x01, // File version (for example, 0x01 for FLV version 1)
-        (char)0x00, // 4, audio; 1, video; 5 audio+video.
+        (char)0x05, // 4, audio; 1, video; 5 audio+video.
         (char)0x00, (char)0x00, (char)0x00, (char)0x09 // DataOffset UI32 The length of this header in bytes
     };
     char pts[] = { (char)0x00, (char)0x00, (char)0x00, (char)0x00 };
@@ -1487,6 +1487,15 @@ VOID TEST(KernelUtilityTest, UtilityString)
     
     str1 = srs_string_replace(str, "o", "XX");
     EXPECT_STREQ("HellXX, WXXrld! HellXX, SRS!", str1.c_str());
+
+    str1 = srs_string_trim_start(str, "x");
+    EXPECT_STREQ("Hello, World! Hello, SRS!", str1.c_str());
+
+    str1 = srs_string_trim_start(str, "S!R");
+    EXPECT_STREQ("Hello, World! Hello, SRS!", str1.c_str());
+
+    str1 = srs_string_trim_start(str, "lHe");
+    EXPECT_STREQ("o, World! Hello, SRS!", str1.c_str());
     
     str1 = srs_string_trim_end(str, "x");
     EXPECT_STREQ("Hello, World! Hello, SRS!", str1.c_str());
@@ -1494,7 +1503,7 @@ VOID TEST(KernelUtilityTest, UtilityString)
     str1 = srs_string_trim_end(str, "He");
     EXPECT_STREQ("Hello, World! Hello, SRS!", str1.c_str());
     
-    str1 = srs_string_trim_end(str, "HeS!R");
+    str1 = srs_string_trim_end(str, "S!R");
     EXPECT_STREQ("Hello, World! Hello, ", str1.c_str());
     
     str1 = srs_string_remove(str, "x");
@@ -1505,6 +1514,18 @@ VOID TEST(KernelUtilityTest, UtilityString)
     
     str1 = srs_string_remove(str, "ol");
     EXPECT_STREQ("He, Wrd! He, SRS!", str1.c_str());
+
+    str1 = srs_erase_first_substr(str, "Hello");
+    EXPECT_STREQ(", World! Hello, SRS!", str1.c_str());
+
+    str1 = srs_erase_first_substr(str, "XX");
+    EXPECT_STREQ("Hello, World! Hello, SRS!", str1.c_str());
+
+    str1 = srs_erase_last_substr(str, "Hello");
+    EXPECT_STREQ("Hello, World! , SRS!", str1.c_str());
+
+    str1 = srs_erase_last_substr(str, "XX");
+    EXPECT_STREQ("Hello, World! Hello, SRS!", str1.c_str());
     
     EXPECT_FALSE(srs_string_ends_with("Hello", "x"));
     EXPECT_TRUE(srs_string_ends_with("Hello", "o"));

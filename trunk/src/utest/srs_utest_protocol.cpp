@@ -444,6 +444,11 @@ VOID TEST(ProtocolUtilityTest, VhostResolve)
     srs_vhost_resolve(vhost, app, param);
     EXPECT_STREQ("changed1", vhost.c_str());
     EXPECT_STREQ("app", app.c_str());
+
+    app = "app?vhost=changed1&query=true";
+    srs_vhost_resolve(vhost, app, param);
+    EXPECT_STREQ("changed1", vhost.c_str());
+    EXPECT_STREQ("app", app.c_str());
     
     app = "app?other=true&&vhost=changed2&&query=true";
     srs_vhost_resolve(vhost, app, param);
@@ -461,41 +466,134 @@ VOID TEST(ProtocolUtilityTest, VhostResolve)
 */
 VOID TEST(ProtocolUtilityTest, DiscoveryTcUrl)
 {
-    std::string tcUrl; 
-    std::string schema; std::string host; std::string vhost; 
-    std::string app; std::string port; std::string param;
+    std::string tcUrl, schema, ip, vhost, app, stream, port, param;
     
-    tcUrl = "rtmp://127.0.0.1:1935/live";
-    srs_discovery_tc_url(tcUrl, schema, host, vhost, app, port, param);
+    // general url
+    tcUrl = "rtmp://winlin.cn/live"; stream= "show";
+    srs_discovery_tc_url(tcUrl, schema, ip, vhost, app, stream, port, param);
     EXPECT_STREQ("rtmp", schema.c_str());
-    EXPECT_STREQ("127.0.0.1", host.c_str());
-    EXPECT_STREQ("127.0.0.1", vhost.c_str());
+    EXPECT_STREQ("winlin.cn", ip.c_str());
+    EXPECT_STREQ("winlin.cn", vhost.c_str());
     EXPECT_STREQ("live", app.c_str());
+    EXPECT_STREQ("show", stream.c_str());
     EXPECT_STREQ("1935", port.c_str());
     
-    tcUrl = "rtmp://127.0.0.1:19351/live";
-    srs_discovery_tc_url(tcUrl, schema, host, vhost, app, port, param);
+    tcUrl = "rtmp://winlin.cn:19351/live"; stream= "show";
+    srs_discovery_tc_url(tcUrl, schema, ip, vhost, app, stream, port, param);
     EXPECT_STREQ("rtmp", schema.c_str());
-    EXPECT_STREQ("127.0.0.1", host.c_str());
+    EXPECT_STREQ("winlin.cn", ip.c_str());
+    EXPECT_STREQ("winlin.cn", vhost.c_str());
+    EXPECT_STREQ("live", app.c_str());
+    EXPECT_STREQ("show", stream.c_str());
+    EXPECT_STREQ("19351", port.c_str());
+    
+    tcUrl = "rtmp://winlin.cn/live"; stream= "show?key=abc";
+    srs_discovery_tc_url(tcUrl, schema, ip, vhost, app, stream, port, param);
+    EXPECT_STREQ("rtmp", schema.c_str());
+    EXPECT_STREQ("winlin.cn", ip.c_str());
+    EXPECT_STREQ("winlin.cn", vhost.c_str());
+    EXPECT_STREQ("live", app.c_str());
+    EXPECT_STREQ("show", stream.c_str());
+    EXPECT_STREQ("1935", port.c_str());
+    EXPECT_STREQ("?key=abc", param.c_str());
+    
+    tcUrl = "rtmp://winlin.cn/live"; stream= "show?key=abc&&vhost=demo.com";
+    srs_discovery_tc_url(tcUrl, schema, ip, vhost, app, stream, port, param);
+    EXPECT_STREQ("rtmp", schema.c_str());
+    EXPECT_STREQ("winlin.cn", ip.c_str());
+    EXPECT_STREQ("demo.com", vhost.c_str());
+    EXPECT_STREQ("live", app.c_str());
+    EXPECT_STREQ("show", stream.c_str());
+    EXPECT_STREQ("1935", port.c_str());
+    EXPECT_STREQ("?key=abc&&vhost=demo.com", param.c_str());
+    
+    // vhost in app
+    tcUrl = "rtmp://winlin.cn/live?key=abc"; stream= "show";
+    srs_discovery_tc_url(tcUrl, schema, ip, vhost, app, stream, port, param);
+    EXPECT_STREQ("rtmp", schema.c_str());
+    EXPECT_STREQ("winlin.cn", ip.c_str());
+    EXPECT_STREQ("winlin.cn", vhost.c_str());
+    EXPECT_STREQ("live", app.c_str());
+    EXPECT_STREQ("show", stream.c_str());
+    EXPECT_STREQ("1935", port.c_str());
+    EXPECT_STREQ("?key=abc", param.c_str());
+    
+    tcUrl = "rtmp://winlin.cn/live?key=abc&&vhost=demo.com"; stream= "show";
+    srs_discovery_tc_url(tcUrl, schema, ip, vhost, app, stream, port, param);
+    EXPECT_STREQ("rtmp", schema.c_str());
+    EXPECT_STREQ("winlin.cn", ip.c_str());
+    EXPECT_STREQ("demo.com", vhost.c_str());
+    EXPECT_STREQ("live", app.c_str());
+    EXPECT_STREQ("show", stream.c_str());
+    EXPECT_STREQ("1935", port.c_str());
+    EXPECT_STREQ("?key=abc&&vhost=demo.com", param.c_str());
+    
+    // without stream
+    tcUrl = "rtmp://winlin.cn/live"; stream="";
+    srs_discovery_tc_url(tcUrl, schema, ip, vhost, app, stream, port, param);
+    EXPECT_STREQ("rtmp", schema.c_str());
+    EXPECT_STREQ("winlin.cn", ip.c_str());
+    EXPECT_STREQ("winlin.cn", vhost.c_str());
+    EXPECT_STREQ("live", app.c_str());
+    EXPECT_STREQ("", stream.c_str());
+    EXPECT_STREQ("1935", port.c_str());
+    
+    tcUrl = "rtmp://127.0.0.1:1935/live"; stream="";
+    srs_discovery_tc_url(tcUrl, schema, ip, vhost, app, stream, port, param);
+    EXPECT_STREQ("rtmp", schema.c_str());
+    EXPECT_STREQ("127.0.0.1", ip.c_str());
     EXPECT_STREQ("127.0.0.1", vhost.c_str());
     EXPECT_STREQ("live", app.c_str());
+    EXPECT_STREQ("", stream.c_str());
+    EXPECT_STREQ("1935", port.c_str());
+    
+    tcUrl = "rtmp://127.0.0.1:19351/live"; stream="";
+    srs_discovery_tc_url(tcUrl, schema, ip, vhost, app, stream, port, param);
+    EXPECT_STREQ("rtmp", schema.c_str());
+    EXPECT_STREQ("127.0.0.1", ip.c_str());
+    EXPECT_STREQ("127.0.0.1", vhost.c_str());
+    EXPECT_STREQ("live", app.c_str());
+    EXPECT_STREQ("", stream.c_str());
     EXPECT_STREQ("19351", port.c_str());
     
-    tcUrl = "rtmp://127.0.0.1:19351/live?vhost=demo";
-    srs_discovery_tc_url(tcUrl, schema, host, vhost, app, port, param);
+    tcUrl = "rtmp://127.0.0.1:19351/live?vhost=demo"; stream="";
+    srs_discovery_tc_url(tcUrl, schema, ip, vhost, app, stream, port, param);
     EXPECT_STREQ("rtmp", schema.c_str());
-    EXPECT_STREQ("127.0.0.1", host.c_str());
+    EXPECT_STREQ("127.0.0.1", ip.c_str());
     EXPECT_STREQ("demo", vhost.c_str());
     EXPECT_STREQ("live", app.c_str());
+    EXPECT_STREQ("", stream.c_str());
     EXPECT_STREQ("19351", port.c_str());
     
-    tcUrl = "rtmp://127.0.0.1:19351/live/show?vhost=demo";
-    srs_discovery_tc_url(tcUrl, schema, host, vhost, app, port, param);
+    // no vhost
+    tcUrl = "rtmp://127.0.0.1:19351/live"; stream= "show";
+    srs_discovery_tc_url(tcUrl, schema, ip, vhost, app, stream, port, param);
     EXPECT_STREQ("rtmp", schema.c_str());
-    EXPECT_STREQ("127.0.0.1", host.c_str());
-    EXPECT_STREQ("demo", vhost.c_str());
-    EXPECT_STREQ("live/show", app.c_str());
+    EXPECT_STREQ("127.0.0.1", ip.c_str());
+    EXPECT_STREQ("127.0.0.1", vhost.c_str());
+    EXPECT_STREQ("live", app.c_str());
+    EXPECT_STREQ("show", stream.c_str());
     EXPECT_STREQ("19351", port.c_str());
+    
+    // ip and vhost
+    tcUrl = "rtmp://127.0.0.1:19351/live"; stream= "show?vhost=demo";
+    srs_discovery_tc_url(tcUrl, schema, ip, vhost, app, stream, port, param);
+    EXPECT_STREQ("rtmp", schema.c_str());
+    EXPECT_STREQ("127.0.0.1", ip.c_str());
+    EXPECT_STREQ("demo", vhost.c_str());
+    EXPECT_STREQ("live", app.c_str());
+    EXPECT_STREQ("show", stream.c_str());
+    EXPECT_STREQ("19351", port.c_str());
+
+    // _definst_ at the end of app
+    tcUrl = "rtmp://winlin.cn/live/_definst_"; stream= "show";
+    srs_discovery_tc_url(tcUrl, schema, ip, vhost, app, stream, port, param);
+    EXPECT_STREQ("rtmp", schema.c_str());
+    EXPECT_STREQ("winlin.cn", ip.c_str());
+    EXPECT_STREQ("winlin.cn", vhost.c_str());
+    EXPECT_STREQ("live", app.c_str());
+    EXPECT_STREQ("show", stream.c_str());
+    EXPECT_STREQ("1935", port.c_str());
 }
 
 /**
@@ -4643,114 +4741,6 @@ VOID TEST(ProtocolStackTest, ProtocolSendVMessage)
 }
 
 /**
-* send a SrsConnectAppPacket packet
-*/
-VOID TEST(ProtocolStackTest, ProtocolSendSrsConnectAppPacket)
-{
-    MockBufferIO bio;
-    SrsProtocol proto(&bio);
-    
-    SrsConnectAppPacket* pkt = new SrsConnectAppPacket();
-    pkt->command_object = SrsAmf0Any::object();
-    pkt->args = SrsAmf0Any::object();
-    
-    pkt->command_object->set("version", SrsAmf0Any::str("1.0.0"));
-    pkt->command_object->set("build", SrsAmf0Any::number(150));
-    SrsAmf0Object* data = SrsAmf0Any::object();
-    pkt->command_object->set("data", data);
-    
-    data->set("server", SrsAmf0Any::str("SRS"));
-    data->set("signature", SrsAmf0Any::str("ossrs"));
-    
-    pkt->args->set("info", SrsAmf0Any::str("NetStream.Status.Info"));
-    pkt->args->set("desc", SrsAmf0Any::str("connected"));
-    pkt->args->set("data", SrsAmf0Any::ecma_array());
-    
-    EXPECT_TRUE(ERROR_SUCCESS == proto.send_and_free_packet(pkt, 0));
-    char buf[] = {
-        (char)0x03, (char)0x00, (char)0x00, (char)0x00, (char)0x00, (char)0x00, (char)0xb2, (char)0x14,
-        (char)0x00, (char)0x00, (char)0x00, (char)0x00, (char)0x02, (char)0x00, (char)0x07, (char)0x63,
-        (char)0x6f, (char)0x6e, (char)0x6e, (char)0x65, (char)0x63, (char)0x74, (char)0x00, (char)0x3f,
-        (char)0xf0, (char)0x00, (char)0x00, (char)0x00, (char)0x00, (char)0x00, (char)0x00, (char)0x03,
-        (char)0x00, (char)0x07, (char)0x76, (char)0x65, (char)0x72, (char)0x73, (char)0x69, (char)0x6f,
-        (char)0x6e, (char)0x02, (char)0x00, (char)0x05, (char)0x31, (char)0x2e, (char)0x30, (char)0x2e,
-        (char)0x30, (char)0x00, (char)0x05, (char)0x62, (char)0x75, (char)0x69, (char)0x6c, (char)0x64,
-        (char)0x00, (char)0x40, (char)0x62, (char)0xc0, (char)0x00, (char)0x00, (char)0x00, (char)0x00,
-        (char)0x00, (char)0x00, (char)0x04, (char)0x64, (char)0x61, (char)0x74, (char)0x61, (char)0x03,
-        (char)0x00, (char)0x06, (char)0x73, (char)0x65, (char)0x72, (char)0x76, (char)0x65, (char)0x72,
-        (char)0x02, (char)0x00, (char)0x03, (char)0x53, (char)0x52, (char)0x53, (char)0x00, (char)0x09,
-        (char)0x73, (char)0x69, (char)0x67, (char)0x6e, (char)0x61, (char)0x74, (char)0x75, (char)0x72,
-        (char)0x65, (char)0x02, (char)0x00, (char)0x12, (char)0x73, (char)0x69, (char)0x6d, (char)0x70,
-        (char)0x6c, (char)0x65, (char)0x2d, (char)0x72, (char)0x74, (char)0x6d, (char)0x70, (char)0x2d,
-        (char)0x73, (char)0x65, (char)0x72, (char)0x76, (char)0x65, (char)0x72, (char)0x00, (char)0x00,
-        (char)0x09, (char)0x00, (char)0x00, (char)0x09, (char)0x03, (char)0x00, (char)0x04, (char)0x69,
-        (char)0x6e, (char)0x66, (char)0x6f, (char)0x02, (char)0x00, (char)0x15, (char)0x4e, (char)0x65,
-        (char)0x74, (char)0x53, (char)0x74, (char)0x72, (char)0xc3, (char)0x65, (char)0x61, (char)0x6d,
-        (char)0x2e, (char)0x53, (char)0x74, (char)0x61, (char)0x74, (char)0x75, (char)0x73, (char)0x2e,
-        (char)0x49, (char)0x6e, (char)0x66, (char)0x6f, (char)0x00, (char)0x04, (char)0x64, (char)0x65,
-        (char)0x73, (char)0x63, (char)0x02, (char)0x00, (char)0x09, (char)0x63, (char)0x6f, (char)0x6e,
-        (char)0x6e, (char)0x65, (char)0x63, (char)0x74, (char)0x65, (char)0x64, (char)0x00, (char)0x04,
-        (char)0x64, (char)0x61, (char)0x74, (char)0x61, (char)0x08, (char)0x00, (char)0x00, (char)0x00,
-        (char)0x00, (char)0x00, (char)0x00, (char)0x09, (char)0x00, (char)0x00, (char)0x09
-    };
-    EXPECT_TRUE(srs_bytes_equals(bio.out_buffer.bytes(), buf, sizeof(buf)));
-}
-
-/**
-* send a SrsConnectAppResPacket packet
-*/
-VOID TEST(ProtocolStackTest, ProtocolSendSrsConnectAppResPacket)
-{
-    MockBufferIO bio;
-    SrsProtocol proto(&bio);
-    
-    SrsConnectAppResPacket* pkt = new SrsConnectAppResPacket();
-    pkt->props = SrsAmf0Any::object();
-    pkt->info = SrsAmf0Any::object();
-    
-    pkt->props->set("version", SrsAmf0Any::str("1.0.0"));
-    pkt->props->set("build", SrsAmf0Any::number(150));
-    SrsAmf0Object* data = SrsAmf0Any::object();
-    pkt->props->set("data", data);
-    
-    data->set("server", SrsAmf0Any::str("SRS"));
-    data->set("signature", SrsAmf0Any::str("ossrs"));
-    
-    pkt->info->set("info", SrsAmf0Any::str("NetStream.Status.Info"));
-    pkt->info->set("desc", SrsAmf0Any::str("connected"));
-    pkt->info->set("data", SrsAmf0Any::ecma_array());
-    
-    EXPECT_TRUE(ERROR_SUCCESS == proto.send_and_free_packet(pkt, 0));
-    char buf[] = {
-        (char)0x03, (char)0x00, (char)0x00, (char)0x00, (char)0x00, (char)0x00, (char)0xb2, (char)0x14,
-        (char)0x00, (char)0x00, (char)0x00, (char)0x00, (char)0x02, (char)0x00, (char)0x07, (char)0x5f,
-        (char)0x72, (char)0x65, (char)0x73, (char)0x75, (char)0x6c, (char)0x74, (char)0x00, (char)0x3f,
-        (char)0xf0, (char)0x00, (char)0x00, (char)0x00, (char)0x00, (char)0x00, (char)0x00, (char)0x03,
-        (char)0x00, (char)0x07, (char)0x76, (char)0x65, (char)0x72, (char)0x73, (char)0x69, (char)0x6f,
-        (char)0x6e, (char)0x02, (char)0x00, (char)0x05, (char)0x31, (char)0x2e, (char)0x30, (char)0x2e,
-        (char)0x30, (char)0x00, (char)0x05, (char)0x62, (char)0x75, (char)0x69, (char)0x6c, (char)0x64,
-        (char)0x00, (char)0x40, (char)0x62, (char)0xc0, (char)0x00, (char)0x00, (char)0x00, (char)0x00,
-        (char)0x00, (char)0x00, (char)0x04, (char)0x64, (char)0x61, (char)0x74, (char)0x61, (char)0x03,
-        (char)0x00, (char)0x06, (char)0x73, (char)0x65, (char)0x72, (char)0x76, (char)0x65, (char)0x72,
-        (char)0x02, (char)0x00, (char)0x03, (char)0x53, (char)0x52, (char)0x53, (char)0x00, (char)0x09,
-        (char)0x73, (char)0x69, (char)0x67, (char)0x6e, (char)0x61, (char)0x74, (char)0x75, (char)0x72,
-        (char)0x65, (char)0x02, (char)0x00, (char)0x12, (char)0x73, (char)0x69, (char)0x6d, (char)0x70,
-        (char)0x6c, (char)0x65, (char)0x2d, (char)0x72, (char)0x74, (char)0x6d, (char)0x70, (char)0x2d,
-        (char)0x73, (char)0x65, (char)0x72, (char)0x76, (char)0x65, (char)0x72, (char)0x00, (char)0x00,
-        (char)0x09, (char)0x00, (char)0x00, (char)0x09, (char)0x03, (char)0x00, (char)0x04, (char)0x69,
-        (char)0x6e, (char)0x66, (char)0x6f, (char)0x02, (char)0x00, (char)0x15, (char)0x4e, (char)0x65,
-        (char)0x74, (char)0x53, (char)0x74, (char)0x72, (char)0xc3, (char)0x65, (char)0x61, (char)0x6d,
-        (char)0x2e, (char)0x53, (char)0x74, (char)0x61, (char)0x74, (char)0x75, (char)0x73, (char)0x2e,
-        (char)0x49, (char)0x6e, (char)0x66, (char)0x6f, (char)0x00, (char)0x04, (char)0x64, (char)0x65,
-        (char)0x73, (char)0x63, (char)0x02, (char)0x00, (char)0x09, (char)0x63, (char)0x6f, (char)0x6e,
-        (char)0x6e, (char)0x65, (char)0x63, (char)0x74, (char)0x65, (char)0x64, (char)0x00, (char)0x04,
-        (char)0x64, (char)0x61, (char)0x74, (char)0x61, (char)0x08, (char)0x00, (char)0x00, (char)0x00,
-        (char)0x00, (char)0x00, (char)0x00, (char)0x09, (char)0x00, (char)0x00, (char)0x09
-    };
-    EXPECT_TRUE(srs_bytes_equals(bio.out_buffer.bytes(), buf, sizeof(buf)));
-}
-
-/**
 * send a SrsCallPacket packet
 */
 VOID TEST(ProtocolStackTest, ProtocolSendSrsCallPacket)
@@ -4933,36 +4923,6 @@ VOID TEST(ProtocolStackTest, ProtocolSendSrsPublishPacket)
         (char)0x02, (char)0x00, (char)0x0a, (char)0x6c, (char)0x69, (char)0x76, (char)0x65, (char)0x73,
         (char)0x74, (char)0x72, (char)0x65, (char)0x61, (char)0x6d, (char)0x02, (char)0x00, (char)0x04,
         (char)0x6c, (char)0x69, (char)0x76, (char)0x65
-    };
-    EXPECT_TRUE(srs_bytes_equals(bio.out_buffer.bytes(), buf, sizeof(buf)));
-}
-
-/**
-* send a SrsPlayPacket packet
-*/
-VOID TEST(ProtocolStackTest, ProtocolSendSrsPlayPacket)
-{
-    MockBufferIO bio;
-    SrsProtocol proto(&bio);
-    
-    SrsPlayPacket* pkt = new SrsPlayPacket();
-    pkt->command_name = "play";
-    pkt->command_object = SrsAmf0Any::null();
-    pkt->stream_name = "livestream";
-    pkt->start = 0;
-    pkt->duration = 0;
-    pkt->reset = true;
-    
-    EXPECT_TRUE(ERROR_SUCCESS == proto.send_and_free_packet(pkt, 0));
-    char buf[] = {
-        (char)0x05, (char)0x00, (char)0x00, (char)0x00, (char)0x00, (char)0x00, (char)0x32, (char)0x14,
-        (char)0x00, (char)0x00, (char)0x00, (char)0x00, (char)0x02, (char)0x00, (char)0x04, (char)0x70,
-        (char)0x6c, (char)0x61, (char)0x79, (char)0x00, (char)0x00, (char)0x00, (char)0x00, (char)0x00,
-        (char)0x00, (char)0x00, (char)0x00, (char)0x00, (char)0x05, (char)0x02, (char)0x00, (char)0x0a,
-        (char)0x6c, (char)0x69, (char)0x76, (char)0x65, (char)0x73, (char)0x74, (char)0x72, (char)0x65,
-        (char)0x61, (char)0x6d, (char)0x00, (char)0x00, (char)0x00, (char)0x00, (char)0x00, (char)0x00,
-        (char)0x00, (char)0x00, (char)0x00, (char)0x00, (char)0x00, (char)0x00, (char)0x00, (char)0x00,
-        (char)0x00, (char)0x00, (char)0x00, (char)0x00, (char)0x01, (char)0x01
     };
     EXPECT_TRUE(srs_bytes_equals(bio.out_buffer.bytes(), buf, sizeof(buf)));
 }
@@ -5543,7 +5503,7 @@ VOID TEST(ProtocolRTMPTest, RTMPRequest)
     
     req.stream = "livestream";
     srs_discovery_tc_url("rtmp://std.ossrs.net/live", 
-        req.schema, req.host, req.vhost, req.app, req.port, param);
+        req.schema, req.host, req.vhost, req.app, req.stream, req.port, param);
     req.strip();
     EXPECT_STREQ("rtmp", req.schema.c_str());
     EXPECT_STREQ("std.ossrs.net", req.host.c_str());
@@ -5553,7 +5513,7 @@ VOID TEST(ProtocolRTMPTest, RTMPRequest)
     
     req.stream = "livestream";
     srs_discovery_tc_url("rtmp://s td.os srs.n et/li v e", 
-        req.schema, req.host, req.vhost, req.app, req.port, param);
+        req.schema, req.host, req.vhost, req.app, req.stream, req.port, param);
     req.strip();
     EXPECT_STREQ("rtmp", req.schema.c_str());
     EXPECT_STREQ("std.ossrs.net", req.host.c_str());
@@ -5563,7 +5523,7 @@ VOID TEST(ProtocolRTMPTest, RTMPRequest)
     
     req.stream = "livestream";
     srs_discovery_tc_url("rtmp://s\ntd.o\rssrs.ne\nt/li\nve", 
-        req.schema, req.host, req.vhost, req.app, req.port, param);
+        req.schema, req.host, req.vhost, req.app, req.stream, req.port, param);
     req.strip();
     EXPECT_STREQ("rtmp", req.schema.c_str());
     EXPECT_STREQ("std.ossrs.net", req.host.c_str());
@@ -5573,7 +5533,7 @@ VOID TEST(ProtocolRTMPTest, RTMPRequest)
     
     req.stream = "livestream";
     srs_discovery_tc_url("rtmp://std.ossrs.net/live ", 
-        req.schema, req.host, req.vhost, req.app, req.port, param);
+        req.schema, req.host, req.vhost, req.app, req.stream, req.port, param);
     req.strip();
     EXPECT_STREQ("rtmp", req.schema.c_str());
     EXPECT_STREQ("std.ossrs.net", req.host.c_str());

@@ -300,6 +300,12 @@ int SrsMpegtsOverUdp::on_ts_message(SrsTsMessage* msg)
             msg->dts, msg->pts, msg->payload->length(), msg->packet->payload_unit_start_indicator, msg->continuity_counter, msg->sid,
             msg->is_audio()? "A":msg->is_video()? "V":"N", msg->stream_number());
     }
+    
+    // When the audio SID is private stream 1, we use common audio.
+    // @see https://github.com/ossrs/srs/issues/740
+    if (msg->channel->apply == SrsTsPidApplyAudio && msg->sid == SrsTsPESStreamIdPrivateStream1) {
+        msg->sid = SrsTsPESStreamIdAudioCommon;
+    }
 
     // when not audio/video, or not adts/annexb format, donot support.
     if (msg->stream_number() != 0) {
@@ -406,7 +412,7 @@ int SrsMpegtsOverUdp::on_ts_video(SrsTsMessage* msg, SrsStream* avs)
         
         // ibp frame.
         // TODO: FIXME: we should group all frames to a rtmp/flv message from one ts message.
-        srs_info("mpegts: demux avc ibp frame size=%d, dts=%d", ibpframe_size, dts);
+        srs_info("mpegts: demux avc ibp frame size=%d, dts=%d", frame_size, dts);
         if ((ret = write_h264_ipb_frame(frame, frame_size, dts, pts)) != ERROR_SUCCESS) {
             return ret;
         }
@@ -622,7 +628,7 @@ int SrsMpegtsOverUdp::connect()
         }
     
         srs_discovery_tc_url(req->tcUrl, 
-            req->schema, req->host, req->vhost, req->app, req->port,
+            req->schema, req->host, req->vhost, req->app, req->stream, req->port,
             req->param);
     }
 

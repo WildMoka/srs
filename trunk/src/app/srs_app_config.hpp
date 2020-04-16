@@ -288,6 +288,11 @@ public:
     */
     virtual int parse_options(int argc, char** argv);
     /**
+     * initialize the cwd for server,
+     * because we may change the workdir.
+     */
+    virtual int initialize_cwd();
+    /**
     * get the config file path.
     */
     virtual std::string config();
@@ -374,6 +379,13 @@ public:
      * whether use utc-time to format the time.
      */
     virtual bool                get_utc_time();
+    /**
+     * get the configed work dir.
+     * ignore if empty string.
+     */
+    virtual std::string         get_work_dir();
+    // whether use asprocess mode.
+    virtual bool                get_asprocess();
 // stream_caster section
 public:
     /**
@@ -902,14 +914,6 @@ public:
     * @see https://github.com/ossrs/srs/issues/264
     */
     virtual std::string         get_hls_on_error(std::string vhost);
-    /**
-    * get the HLS storage type.
-    */
-    virtual std::string         get_hls_storage(std::string vhost);
-    /**
-    * get the HLS mount url for HTTP server.
-    */
-    virtual std::string         get_hls_mount(std::string vhost);
     /**
     * get the HLS default audio codec.
     */

@@ -285,6 +285,7 @@ int SrsEncoder::initialize_ffmpeg(SrsFFMPEG* ffmpeg, SrsRequest* req, SrsConfDir
     output = srs_string_replace(output, "[port]", req->port);
     output = srs_string_replace(output, "[app]", req->app);
     output = srs_string_replace(output, "[stream]", req->stream);
+    output = srs_string_replace(output, "[param]", req->param);
     output = srs_string_replace(output, "[engine]", engine->arg0());
     
     std::string log_file = SRS_CONSTS_NULL_FILE; // disabled
@@ -299,6 +300,10 @@ int SrsEncoder::initialize_ffmpeg(SrsFFMPEG* ffmpeg, SrsRequest* req, SrsConfDir
         log_file += req->app;
         log_file += "-";
         log_file += req->stream;
+        if (!engine->args.empty()) {
+            log_file += "-";
+            log_file += engine->arg0();
+        }
         log_file += ".log";
     }
 
