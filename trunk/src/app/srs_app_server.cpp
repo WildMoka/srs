@@ -48,6 +48,7 @@ using namespace std;
 #include <srs_app_statistic.hpp>
 #include <srs_app_caster_flv.hpp>
 #include <srs_core_mem_watch.hpp>
+#include <srs_app_latest_version.hpp>
 
 // signal defines.
 #define SIGNAL_RELOAD SIGHUP
@@ -214,9 +215,9 @@ int SrsRtspListener::listen(string i, int p)
         return ret;
     }
     
-    srs_info("listen thread cid=%d, current_cid=%d, "
+    srs_info("listen thread, current_cid=%d, "
         "listen at port=%d, type=%d, fd=%d started success, ep=%s:%d",
-        pthread->cid(), _srs_context->get_id(), port, type, fd, ip.c_str(), port);
+        _srs_context->get_id(), port, type, fd, ip.c_str(), port);
 
     srs_trace("%s listen at tcp://%s:%d, fd=%d", srs_listener_type2string(type).c_str(), ip.c_str(), port, listener->fd());
 
@@ -276,9 +277,9 @@ int SrsHttpFlvListener::listen(string i, int p)
         return ret;
     }
     
-    srs_info("listen thread cid=%d, current_cid=%d, "
+    srs_info("listen thread, current_cid=%d, "
              "listen at port=%d, type=%d, fd=%d started success, ep=%s:%d",
-             pthread->cid(), _srs_context->get_id(), port, type, fd, ip.c_str(), port);
+             _srs_context->get_id(), port, type, fd, ip.c_str(), port);
     
     srs_trace("%s listen at tcp://%s:%d, fd=%d", srs_listener_type2string(type).c_str(), ip.c_str(), port, listener->fd());
     
@@ -486,8 +487,10 @@ SrsServer::SrsServer()
     pid_fd = -1;
     
     signal_manager = NULL;
+    latest_version_ = new SrsLatestVersion();
     
     handler = NULL;
+    ppid = ::getppid();
     
     // donot new object in constructor,
     // for some global instance is not ready now,
@@ -539,6 +542,7 @@ void SrsServer::destroy()
     }
     
     srs_freep(signal_manager);
+    srs_freep(latest_version_);
 }
 
 void SrsServer::dispose()
@@ -635,14 +639,34 @@ int SrsServer::initialize_st()
     
     // set current log id.
     _srs_context->generate_id();
-    srs_trace("server main cid=%d", _srs_context->get_id());
+    
+    // check asprocess.
+    bool asprocess = _srs_config->get_asprocess();
+    if (asprocess && ppid == 1) {
+        ret = ERROR_SYSTEM_ASSERT_FAILED;
+        srs_error("for asprocess, ppid should never be init(1), ret=%d", ret);
+        return ret;
+    }
+    srs_trace("server main cid=%d, pid=%d, ppid=%d, asprocess=%d",
+        _srs_context->get_id(), ::getpid(), ppid, asprocess);
     
     return ret;
 }
 
 int SrsServer::initialize_signal()
 {
-    return signal_manager->initialize();
+    int ret = ERROR_SUCCESS;
+
+    if ((ret = signal_manager->initialize()) != ERROR_SUCCESS) {
+        return ret;
+    }
+
+    // Start the version query coroutine.
+    if ((ret = latest_version_->start()) != ERROR_SUCCESS) {
+        return ret;
+    }
+
+    return ret;
 }
 
 int SrsServer::acquire_pid_file()
@@ -680,6 +704,7 @@ int SrsServer::acquire_pid_file()
         if(errno == EACCES || errno == EAGAIN) {
             ret = ERROR_SYSTEM_PID_ALREADY_RUNNING;
             srs_error("srs is already running! ret=%#x", ret);
+            ::close(fd);
             return ret;
         }
         
@@ -866,6 +891,11 @@ int SrsServer::cycle()
     srs_warn("main cycle terminated, system quit normally.");
     dispose();
     srs_trace("srs terminated");
+    
+    // for valgrind to detect.
+    srs_freep(_srs_config);
+    srs_freep(_srs_log);
+    
     exit(0);
 #endif
     
@@ -940,6 +970,9 @@ int SrsServer::do_cycle()
     max = srs_max(max, SRS_SYS_NETWORK_RTMP_SERVER_RESOLUTION_TIMES);
 #endif
     
+    // for asprocess.
+    bool asprocess = _srs_config->get_asprocess();
+    
     // the deamon thread, update the time cache
     while (true) {
         if(handler && (ret = handler->on_cycle((int)conns.size())) != ERROR_SUCCESS){
@@ -956,6 +989,12 @@ int SrsServer::do_cycle()
         
         for (int i = 0; i < temp_max; i++) {
             st_usleep(SRS_SYS_CYCLE_INTERVAL * 1000);
+            
+            // asprocess check.
+            if (asprocess && ::getppid() != ppid) {
+                srs_warn("asprocess ppid changed from %d to %d", ppid, ::getppid());
+                return ret;
+            }
             
             // gracefully quit for SIGINT or SIGTERM.
             if (signal_gracefully_quit) {
@@ -1415,69 +1454,5 @@ void SrsServer::on_unpublish(SrsSource* s, SrsRequest* r)
 #ifdef SRS_AUTO_HTTP_SERVER
     http_server->http_unmount(s, r);
 #endif
-}
-
-int SrsServer::on_hls_publish(SrsRequest* r)
-{
-    int ret = ERROR_SUCCESS;
-    
-#ifdef SRS_AUTO_HTTP_SERVER
-    if ((ret = http_server->mount_hls(r)) != ERROR_SUCCESS) {
-        return ret;
-    }
-#endif
-    
-    return ret;
-}
-
-int SrsServer::on_update_m3u8(SrsRequest* r, string m3u8)
-{
-    int ret = ERROR_SUCCESS;
-    
-#ifdef SRS_AUTO_HTTP_SERVER
-    if ((ret = http_server->hls_update_m3u8(r, m3u8)) != ERROR_SUCCESS) {
-        return ret;
-    }
-#endif
-    
-    return ret;
-}
-
-int SrsServer::on_update_ts(SrsRequest* r, string uri, string ts)
-{
-    int ret = ERROR_SUCCESS;
-    
-#ifdef SRS_AUTO_HTTP_SERVER
-    if ((ret = http_server->hls_update_ts(r, uri, ts)) != ERROR_SUCCESS) {
-        return ret;
-    }
-#endif
-    
-    return ret;
-}
-
-
-int SrsServer::on_remove_ts(SrsRequest* r, string uri)
-{
-    int ret = ERROR_SUCCESS;
-    
-#ifdef SRS_AUTO_HTTP_SERVER
-    if ((ret = http_server->hls_remove_ts(r, uri)) != ERROR_SUCCESS) {
-        return ret;
-    }
-#endif
-    
-    return ret;
-}
-
-int SrsServer::on_hls_unpublish(SrsRequest* r)
-{
-    int ret = ERROR_SUCCESS;
-    
-#ifdef SRS_AUTO_HTTP_SERVER
-    http_server->unmount_hls(r);
-#endif
-    
-    return ret;
 }
 

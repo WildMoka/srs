@@ -861,13 +861,26 @@ SrsRequest* SrsHttpMessage::to_request(string vhost)
     }
     
     req->tcUrl = "rtmp://" + vhost + req->app;
+    std::string query = _uri->get_query();
+    if (!query.empty()) {
+        req->tcUrl = req->tcUrl + "?" + query;
+    }
     req->pageUrl = get_request_header("Referer");
     req->objectEncoding = 0;
     
-    srs_discovery_tc_url(req->tcUrl,
-                         req->schema, req->host, req->vhost, req->app, req->port,
-                         req->param);
-    req->strip();
+    srs_discovery_tc_url(req->tcUrl, req->schema, req->host, req->vhost, req->app, req->stream, req->port, req->param);
+    req->as_http();
+
+    // Set ip by remote ip of connection.
+    if (conn) {
+        req->ip = conn->remote_ip();
+    }
+
+    // Overwrite by ip from proxy.
+    string oip = srs_get_original_ip(this);
+    if (!oip.empty()) {
+        req->ip = oip;
+    }
     
     return req;
 }
@@ -1310,6 +1323,19 @@ SrsResponseOnlyHttpConn::~SrsResponseOnlyHttpConn()
 {
 }
 
+int SrsResponseOnlyHttpConn::pop_message(ISrsHttpMessage** preq)
+{
+    int ret = ERROR_SUCCESS;
+    
+    SrsStSocket skt(stfd);
+    
+    if ((ret = parser->parse_message(&skt, this, preq)) != ERROR_SUCCESS) {
+        return ret;
+    }
+    
+    return ret;
+}
+
 int SrsResponseOnlyHttpConn::on_got_http_message(ISrsHttpMessage* msg)
 {
     int ret = ERROR_SUCCESS;
@@ -1380,31 +1406,6 @@ int SrsHttpServer::http_mount(SrsSource* s, SrsRequest* r)
 void SrsHttpServer::http_unmount(SrsSource* s, SrsRequest* r)
 {
     http_stream->http_unmount(s, r);
-}
-
-int SrsHttpServer::mount_hls(SrsRequest* r)
-{
-    return http_stream->mount_hls(r);
-}
-
-int SrsHttpServer::hls_update_m3u8(SrsRequest* r, std::string m3u8)
-{
-    return http_stream->hls_update_m3u8(r, m3u8);
-}
-
-int SrsHttpServer::hls_update_ts(SrsRequest* r, std::string uri, std::string ts)
-{
-    return http_stream->hls_update_ts(r, uri, ts);
-}
-
-int SrsHttpServer::hls_remove_ts(SrsRequest* r, std::string uri)
-{
-    return http_stream->hls_remove_ts(r, uri);
-}
-
-void SrsHttpServer::unmount_hls(SrsRequest* r)
-{
-    http_stream->unmount_hls(r);
 }
 
 #endif

@@ -46,6 +46,7 @@ extern int srs_avc_nalu_read_bit(SrsBitStream* stream, int8_t& v);
 // get current system time in ms, use cache to avoid performance problem
 extern int64_t srs_get_system_time_ms();
 extern int64_t srs_get_system_startup_time_ms();
+extern int64_t srs_get_system_startup_time_us();
 // the deamon st-thread will update it.
 extern int64_t srs_update_system_time_ms();
 
@@ -63,6 +64,10 @@ extern std::string srs_string_trim_end(std::string str, std::string trim_chars);
 extern std::string srs_string_trim_start(std::string str, std::string trim_chars);
 // remove char in remove_chars of str
 extern std::string srs_string_remove(std::string str, std::string remove_chars);
+// remove first substring from str
+extern std::string srs_erase_first_substr(std::string str, std::string erase_string);
+// remove last substring from str
+extern std::string srs_erase_last_substr(std::string str, std::string erase_string);
 // whether string end with
 extern bool srs_string_ends_with(std::string str, std::string flag);
 // whether string starts with

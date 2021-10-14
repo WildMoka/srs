@@ -51,6 +51,7 @@ private:
 public:
     SrsStreamCache(SrsSource* s, SrsRequest* r);
     virtual ~SrsStreamCache();
+    virtual int update(SrsSource* s, SrsRequest* r);
 public:
     virtual int start();
     virtual int dump_cache(SrsConsumer* consumer, SrsRtmpJitterAlgorithm jitter);
@@ -227,9 +228,13 @@ private:
 public:
     SrsLiveStream(SrsSource* s, SrsRequest* r, SrsStreamCache* c);
     virtual ~SrsLiveStream();
+    virtual int update(SrsSource* s, SrsRequest* r);
 public:
     virtual int serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r);
 private:
+    virtual int do_serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r);
+    virtual int http_hooks_on_play(ISrsHttpMessage* r);
+    virtual void http_hooks_on_stop(ISrsHttpMessage* r);
     virtual int streaming_send_messages(ISrsStreamEncoder* enc, SrsSharedPtrMessage** msgs, int nb_msgs);
 };
 
@@ -332,10 +337,6 @@ public:
     std::map<std::string, SrsLiveEntry*> tflvs;
     // the http live streaming streams, crote by template.
     std::map<std::string, SrsLiveEntry*> sflvs;
-    // the hls live streaming template, to create streams.
-    std::map<std::string, SrsHlsEntry*> thls;
-    // the hls live streaming streams, crote by template.
-    std::map<std::string, SrsHlsEntry*> shls;
 public:
     SrsHttpStreamServer(SrsServer* svr);
     virtual ~SrsHttpStreamServer();
@@ -345,26 +346,16 @@ public:
 public:
     virtual int http_mount(SrsSource* s, SrsRequest* r);
     virtual void http_unmount(SrsSource* s, SrsRequest* r);
-// hls stream
-public:
-    virtual int mount_hls(SrsRequest* r);
-    virtual int hls_update_m3u8(SrsRequest* r, std::string m3u8);
-    virtual int hls_update_ts(SrsRequest* r, std::string uri, std::string ts);
-    virtual int hls_remove_ts(SrsRequest* r, std::string uri);
-    virtual void unmount_hls(SrsRequest* r);
 // interface ISrsReloadHandler.
 public:
     virtual int on_reload_vhost_added(std::string vhost);
     virtual int on_reload_vhost_http_remux_updated(std::string vhost);
-    virtual int on_reload_vhost_hls(std::string vhost);
 // interface ISrsHttpMatchHijacker
 public:
     virtual int hijack(ISrsHttpMessage* request, ISrsHttpHandler** ph);
 private:
     virtual int initialize_flv_streaming();
     virtual int initialize_flv_entry(std::string vhost);
-    virtual int initialize_hls_streaming();
-    virtual std::string hls_mount_generate(SrsRequest* r, std::string uri, std::string tmpl);
 };
 
 #endif
