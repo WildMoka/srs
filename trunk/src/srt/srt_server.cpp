@@ -111,6 +111,7 @@ void srt_server::init_srt_log() {
             set_srt_log_level(SRT_LOGGER_TRACE_LEVEL);
         }
     }
+    set_srt_log_srt_to_rtmp(_srs_config->get_srt_to_rtmp());
     return;
 }
 
@@ -333,9 +334,12 @@ srs_error_t SrtServerAdapter::run(SrsWaitGroup* wg)
         srt_log_trace("srt server is enabled...");
         unsigned short srt_port = _srs_config->get_srt_listen_port();
         srt_log_trace("srt server listen port:%d", srt_port);
-        err = srt2rtmp::get_instance()->init();
-        if (err != srs_success) {
-            return srs_error_wrap(err, "srt start srt2rtmp error");
+
+        if (_srs_config->get_srt_to_rtmp()) {
+            err = srt2rtmp::get_instance()->init();
+            if (err != srs_success) {
+                return srs_error_wrap(err, "srt start srt2rtmp error");
+            }
         }
 
         srt_ptr = std::make_shared<srt_server>(srt_port);

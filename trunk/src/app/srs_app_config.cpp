@@ -6830,6 +6830,21 @@ bool SrsConfig::get_srt_mix_correct() {
     return SRS_CONF_PERFER_TRUE(conf->arg0());
 }
 
+
+bool SrsConfig::get_srt_to_rtmp() {
+    static bool DEFAULT = true;
+    SrsConfDirective* conf = root->get("srt_server");
+    if (!conf) {
+        return DEFAULT;
+    }
+
+    conf = conf->get("srt_to_rtmp");
+    if (!conf || conf->arg0().empty()) {
+        return DEFAULT;
+    }
+    return SRS_CONF_PERFER_TRUE(conf->arg0());
+}
+
 int SrsConfig::get_srto_maxbw() {
     static int64_t DEFAULT = -1;
     SrsConfDirective* conf = root->get("srt_server");

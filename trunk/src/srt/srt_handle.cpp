@@ -205,17 +205,19 @@ void srt_handle::handle_push_data(SRT_SOCKSTATUS status, const std::string& path
 
     srt_conn_ptr->update_timestamp(srt_now_ms);
 
-    srt2rtmp::get_instance()->insert_data_message(data, ret, subpath);
-    {
-        std::unique_lock<std::mutex> locker(srt2rtmp::_srt_error_mutex);
-        if (srt2rtmp::_srt_error_map.count(subpath) == 1) {
-            int err_code = srt2rtmp::_srt_error_map[subpath];
-            if (err_code != ERROR_SUCCESS) {
-                close_push_conn(conn_fd);
-                srt_log_error("handle_push_data srt to rtmp error:%d, fd:%d", err_code,conn_fd);
-                //todo: reset to next use, maybe update by srt2rtmp::cycle again
-                srt2rtmp::_srt_error_map[subpath] = ERROR_SUCCESS;
-                return;
+    if (_srs_config->get_srt_to_rtmp()) {
+        srt2rtmp::get_instance()->insert_data_message(data, ret, subpath);
+        {
+            std::unique_lock<std::mutex> locker(srt2rtmp::_srt_error_mutex);
+            if (srt2rtmp::_srt_error_map.count(subpath) == 1) {
+                int err_code = srt2rtmp::_srt_error_map[subpath];
+                if (err_code != ERROR_SUCCESS) {
+                    close_push_conn(conn_fd);
+                    srt_log_error("handle_push_data srt to rtmp error:%d, fd:%d", err_code,conn_fd);
+                    //todo: reset to next use, maybe update by srt2rtmp::cycle again
+                    srt2rtmp::_srt_error_map[subpath] = ERROR_SUCCESS;
+                    return;
+                }
             }
         }
     }
@@ -314,7 +316,10 @@ void srt_handle::close_push_conn(SRTSOCKET srtsocket) {
             _push_conn_map.erase(push_iter);
         }
         _conn_map.erase(iter);
-        srt2rtmp::get_instance()->insert_ctrl_message(SRT_MSG_CLOSE_TYPE, conn_ptr->get_subpath());
+
+        if (_srs_config->get_srt_to_rtmp()) {
+            srt2rtmp::get_instance()->insert_ctrl_message(SRT_MSG_CLOSE_TYPE, conn_ptr->get_subpath());
+        }
         conn_ptr->close();
     }
 

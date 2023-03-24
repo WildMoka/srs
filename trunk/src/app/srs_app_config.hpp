@@ -645,6 +645,9 @@ public:
     virtual std::string get_default_app_name();
     // Get the mix_correct
     virtual bool get_srt_mix_correct();
+    // Get the srt to rtmp option
+    virtual bool get_srt_to_rtmp();
+
 
 // http_hooks section
 private:

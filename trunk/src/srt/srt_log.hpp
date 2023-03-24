@@ -13,6 +13,7 @@ typedef enum {
 } LOGGER_LEVEL;
 
 void set_srt_log_level(LOGGER_LEVEL level);
+void set_srt_log_srt_to_rtmp(bool active);
 LOGGER_LEVEL get_srt_log_level();
 char* get_srt_log_buffer();
 void srt_log_output(LOGGER_LEVEL level, const char* buffer);
