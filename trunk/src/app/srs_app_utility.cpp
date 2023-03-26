@@ -1416,7 +1416,7 @@ string srs_string_dumps_hex(const char* str, int length, int limit, char seperat
     return string(buf, len);
 }
 
-string srs_getenv(string key)
+string srs_getenv(const string& key)
 {
     string ekey = key;
     if (srs_string_starts_with(key, "$")) {
@@ -1425,6 +1425,15 @@ string srs_getenv(string key)
 
     if (ekey.empty()) {
         return "";
+    }
+
+    std::string::iterator it;
+    for (it = ekey.begin(); it != ekey.end(); ++it) {
+        if (*it >= 'a' && *it <= 'z') {
+            *it += ('A' - 'a');
+        } else if (*it == '.') {
+            *it = '_';
+        }
     }
 
     char* value = ::getenv(ekey.c_str());
