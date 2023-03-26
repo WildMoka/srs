@@ -873,7 +873,11 @@ srs_error_t SrsServer::http_handle()
         return srs_error_wrap(err, "handle tests errors");
     }
 #endif
-    
+    // metrics by prometheus
+    if ((err = http_api_mux->handle("/metrics", new SrsGoApiMetrics())) != srs_success) {
+        return srs_error_wrap(err, "handle tests errors");
+    }
+
     // TODO: FIXME: for console.
     // TODO: FIXME: support reload.
     std::string dir = _srs_config->get_http_stream_dir() + "/console";

@@ -20,6 +20,10 @@
 
 #include <srs_kernel_consts.hpp>
 
+#if defined(__linux__) || defined(SRS_OSX)
+#include <sys/utsname.h>
+#endif
+
 class SrsMessageHeader;
 class SrsSharedPtrMessage;
 class SrsCommonMessage;
@@ -111,6 +115,11 @@ std::string srs_join_vector_string(std::vector<T>& vs, std::string separator)
 
 // Whether domain is an IPv4 address.
 extern bool srs_is_ipv4(std::string domain);
+
+#if defined(__linux__) || defined(SRS_OSX)
+// Get system uname info.
+extern utsname* srs_get_system_uname_info();
+#endif
 
 #endif
 

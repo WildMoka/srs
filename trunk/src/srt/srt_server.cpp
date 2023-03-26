@@ -22,6 +22,7 @@
 #include <srs_app_rtmp_conn.hpp>
 #include <srs_app_config.hpp>
 #include <srs_app_utility.hpp>
+#include <srs_app_statistic.hpp>
 
 srt_server::srt_server(unsigned short port):_listen_port(port)
     ,_server_socket(-1)
@@ -237,6 +238,19 @@ void srt_server::srt_handle_connection(SRT_SOCKSTATUS status, SRTSOCKET input_fd
             }
             
             _handle_ptr->add_newconn(srt_conn_ptr, conn_event);
+
+            // Add some basic stats support
+            {
+                SrsRequest* req = new SrsRequest();
+                // Fake request for basic stats support
+                req->vhost = vhost_str;
+                req->host = vhost_str;
+                req->app = srt_conn_ptr->get_path();
+                // Temporary patch, reuse RTC types
+                SrsRtmpConnType type = srt_conn_ptr->get_mode() == PUSH_SRT_MODE ? SrsRtcConnPublish : SrsRtcConnPlay;
+                SrsStatistic::instance()->on_client(streamid.c_str(), req, NULL, type);
+                srs_freep(req);
+            }
             break;
         }
         case SRTS_CONNECTED:

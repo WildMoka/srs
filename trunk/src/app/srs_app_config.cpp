@@ -2475,6 +2475,7 @@ srs_error_t SrsConfig::check_normal_config()
             && n != "inotify_auto_reload" && n != "auto_reload_for_docker" && n != "tcmalloc_release_rate"
             && n != "query_latest_version" && n != "first_wait_for_qlv"
             && n != "circuit_breaker" && n != "is_full" && n != "in_docker"
+            && n != "exporter"
             ) {
             return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "illegal directive %s", n.c_str());
         }
@@ -2552,7 +2553,16 @@ srs_error_t SrsConfig::check_normal_config()
             }
         }
     }
-    
+    if (true) {
+        SrsConfDirective* conf = root->get("exporter");
+        for (int i = 0; conf && i < (int)conf->directives.size(); i++) {
+            string n = conf->at(i)->name;
+            if (n != "enabled" && n != "listen" && n != "label" && n != "tag") {
+                return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "illegal exporter.%s", n.c_str());
+            }
+        }
+    }
+
     ////////////////////////////////////////////////////////////////////////
     // check listen for rtmp.
     ////////////////////////////////////////////////////////////////////////
@@ -3448,6 +3458,61 @@ int SrsConfig::get_dying_pulse()
     }
 
     return ::atoi(conf->arg0().c_str());
+}
+
+bool SrsConfig::get_exporter_enabled()
+{
+
+    static bool DEFAULT = false;
+
+    SrsConfDirective* conf = root->get("exporter");
+    if (!conf) {
+        return DEFAULT;
+    }
+
+    conf = conf->get("enabled");
+    if (!conf) {
+        return DEFAULT;
+    }
+
+    return SRS_CONF_PERFER_FALSE(conf->arg0());
+}
+
+
+string SrsConfig::get_exporter_label()
+{
+
+    static string DEFAULT = "";
+
+    SrsConfDirective* conf = root->get("exporter");
+    if (!conf) {
+        return DEFAULT;
+    }
+
+    conf = conf->get("label");
+    if (!conf) {
+        return DEFAULT;
+    }
+
+    return conf->arg0();
+}
+
+string SrsConfig::get_exporter_tag()
+{
+
+    static string DEFAULT = "";
+
+    SrsConfDirective* conf = root->get("exporter");
+    if (!conf) {
+        return DEFAULT;
+    }
+
+    conf = conf->get("tag");
+    if (!conf) {
+        return DEFAULT;
+    }
+
+    return conf->arg0();
 }
 
 vector<SrsConfDirective*> SrsConfig::get_stream_casters()

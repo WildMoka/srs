@@ -241,6 +241,8 @@ SrsStatistic::SrsStatistic()
     clk = new SrsWallClock();
     kbps = new SrsKbps(clk);
     kbps->set_io(NULL, NULL);
+    nb_clients_ = 0;
+    nb_errs_ = 0;
 }
 
 SrsStatistic::~SrsStatistic()
@@ -413,7 +415,9 @@ srs_error_t SrsStatistic::on_client(std::string id, SrsRequest* req, ISrsExpire*
     // @see https://github.com/ossrs/srs/issues/2311
     srs_freep(client->req);
     client->req = req->copy();
-    
+
+    nb_clients_++;
+
     return err;
 }
 
@@ -433,6 +437,11 @@ void SrsStatistic::on_disconnect(std::string id)
     
     stream->nb_clients--;
     vhost->nb_clients--;
+
+//    Port of 5.0 error disabled since would change contract of this method
+//    if (srs_error_code(err) != ERROR_SUCCESS) {
+//        nb_errs_++;
+//    }
 
     cleanup_stream(stream);
 }
@@ -523,6 +532,24 @@ std::string SrsStatistic::server_id()
         server_id_ = _srs_config->get_server_id();
     }
     return server_id_;
+}
+
+std::string SrsStatistic::service_id()
+{
+    if (service_id_.empty()) {
+        service_id_ = srs_random_str(8);
+    }
+
+    return service_id_;
+}
+
+std::string SrsStatistic::service_pid()
+{
+    if (service_pid_.empty()) {
+        service_pid_ = srs_int2str(getpid());
+    }
+
+    return service_pid_;
 }
 
 srs_error_t SrsStatistic::dumps_vhosts(SrsJsonArray* arr)
@@ -647,3 +674,18 @@ SrsStatisticStream* SrsStatistic::create_stream(SrsStatisticVhost* vhost, SrsReq
     return stream;
 }
 
+srs_error_t SrsStatistic::dumps_metrics(int64_t& send_bytes, int64_t& recv_bytes, int64_t& nstreams, int64_t& nclients, int64_t& total_nclients, int64_t& nerrs)
+{
+    srs_error_t err = srs_success;
+
+    send_bytes = kbps->get_send_bytes();
+    recv_bytes = kbps->get_recv_bytes();
+
+    nstreams = streams.size();
+    nclients = clients.size();
+
+    total_nclients = nb_clients_;
+    nerrs = nb_errs_;
+
+    return err;
+}

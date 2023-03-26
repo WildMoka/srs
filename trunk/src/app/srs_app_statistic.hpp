@@ -118,6 +118,10 @@ private:
     static SrsStatistic *_instance;
     // The id to identify the sever.
     std::string server_id_;
+    // The id to identify the service.
+    std::string service_id_;
+    // The pid to identify the service process.
+    std::string service_pid_;
 private:
     // The key: vhost id, value: vhost object.
     std::map<std::string, SrsStatisticVhost*> vhosts;
@@ -136,6 +140,11 @@ private:
     // The server total kbps.
     SrsKbps* kbps;
     SrsWallClock* clk;
+private:
+    // The total of clients connections.
+    int64_t nb_clients_;
+    // The total of clients errors.
+    int64_t nb_errs_;
 private:
     SrsStatistic();
     virtual ~SrsStatistic();
@@ -188,6 +197,10 @@ public:
     // Get the server id, used to identify the server.
     // For example, when restart, the server id must changed.
     virtual std::string server_id();
+    // Get the service id, used to identify the restart of service.
+    virtual std::string service_id();
+    // Get the service pid, used to identify the service process.
+    virtual std::string service_pid();
     // Dumps the vhosts to amf0 array.
     virtual srs_error_t dumps_vhosts(SrsJsonArray* arr);
     // Dumps the streams to amf0 array.
@@ -203,6 +216,9 @@ public:
 private:
     virtual SrsStatisticVhost* create_vhost(SrsRequest* req);
     virtual SrsStatisticStream* create_stream(SrsStatisticVhost* vhost, SrsRequest* req);
+public:
+    // Dumps exporter metrics.
+    virtual srs_error_t dumps_metrics(int64_t& send_bytes, int64_t& recv_bytes, int64_t& nstreams, int64_t& nclients, int64_t& total_nclients, int64_t& nerrs);
 };
 
 // Generate a random string id, with constant prefix.
