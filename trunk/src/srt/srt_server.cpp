@@ -76,7 +76,15 @@ int srt_server::init_srt_parameter() {
     if (DEF_PEER_LATENCY != peer_latency) {
         srt_setsockopt(_server_socket, 0, SRTO_PEERLATENCY, &recv_latency, opt_len);
     }
-    
+
+    std::string passphrase = _srs_config->get_srto_passphrase();
+    if (! passphrase.empty()) {
+        srt_setsockflag(_server_socket, SRTO_PASSPHRASE, passphrase.data(), passphrase.size());
+        int pbkeylen = _srs_config->get_srto_pbkeylen();
+        srt_setsockflag(_server_socket, SRTO_PBKEYLEN, &pbkeylen, opt_len);
+    }
+
+
     srt_log_trace("init srt parameter, maxbw:%d, mss:%d, tlpkdrop:%d, connect timeout:%d, \
 send buff:%d, recv buff:%d, payload size:%d, latency:%d, recv latency:%d, peer latency:%d",
         maxbw, mss, tlpkdrop, connection_timeout, send_buff, recv_buff, payload_size,

@@ -3485,6 +3485,7 @@ int SrsConfig::get_dying_pulse()
 
 bool SrsConfig::get_exporter_enabled()
 {
+    SRS_OVERWRITE_BY_ENV_BOOL("srs.exporter.enabled"); // SRS_EXPORTER_ENABLED
 
     static bool DEFAULT = false;
 
