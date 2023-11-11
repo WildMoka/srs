@@ -216,6 +216,12 @@ void srt_server::srt_handle_connection(SRT_SOCKSTATUS status, SRTSOCKET input_fd
             }
             //add new srt connect into srt handle
             std::string streamid = UDT::getstreamid(conn_fd);
+
+            if (streamid.empty() && _srs_config->get_srt_default_publish()) {
+                streamid = "#!::r=live/default,m=publish";
+                srt_log_warn("Using default stream id %s because not set in params",
+                    streamid.c_str());
+            }
             if (!is_streamid_valid(streamid)) {
                 srt_log_trace("srt streamid(%s) error, fd:%d", streamid.c_str(), conn_fd);
                 srt_close(conn_fd);

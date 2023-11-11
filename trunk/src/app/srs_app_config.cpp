@@ -2535,7 +2535,7 @@ srs_error_t SrsConfig::check_normal_config()
                 && n != "peerlatency" && n != "tlpkdrop" && n != "connect_timeout"
                 && n != "sendbuf" && n != "recvbuf" && n != "payloadsize"
                 && n != "default_app" && n != "mix_correct" && n != "sei_filter"
-                && n != "srt_to_rtmp") {
+                && n != "srt_to_rtmp" && n != "default_publish") {
                 return srs_error_new(ERROR_SYSTEM_CONFIG_INVALID, "illegal srt_stream.%s", n.c_str());
             }
         }
@@ -7207,6 +7207,26 @@ bool SrsConfig::get_srt_to_rtmp()
     }
 
     conf = conf->get("srt_to_rtmp");
+    if (!conf || conf->arg0().empty()) {
+        return DEFAULT;
+    }
+
+    return SRS_CONF_PERFER_TRUE(conf->arg0());
+}
+
+
+bool SrsConfig::get_srt_default_publish()
+{
+    SRS_OVERWRITE_BY_ENV_BOOL("srs.vhost.srt.default_publish"); // SRS_VHOST_SRT_DEFAULT_PUBLISH
+
+    static bool DEFAULT = false;
+
+    SrsConfDirective* conf = root->get("srt_server");
+    if (!conf) {
+        return DEFAULT;
+    }
+
+    conf = conf->get("default_publish");
     if (!conf || conf->arg0().empty()) {
         return DEFAULT;
     }
