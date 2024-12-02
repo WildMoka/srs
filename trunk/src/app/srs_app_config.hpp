@@ -651,8 +651,8 @@ public:
     virtual bool get_srt_mix_correct();
     // Get the srt to rtmp option
     virtual bool get_srt_to_rtmp();
-    // Get the default publish option (avoid to have to pass a stream id)
-    virtual bool get_srt_default_publish();
+    // Get the default auto stream option (avoid to have to pass a stream id for push or pull)
+    virtual int get_auto_streamid();
 
 
 // http_hooks section
